@@ -1,4 +1,5 @@
-use crate::tokens::{Literal, Token, TokenType};
+use crate::Literal;
+use crate::tokens::{Token, TokenType};
 
 pub struct Lexer<'source> {
     logos_lexer: logos::Lexer<'source, TokenType>,
@@ -24,7 +25,7 @@ impl<'source> Lexer<'source> {
                 Err(_) => {
                     return Some(Token {
                         token_type: TokenType::Error,
-                        lexeme: (&self.source[self.logos_lexer.span()]).to_string(),
+                        lexeme: self.source[self.logos_lexer.span()].to_string(),
                         literal: None,
                         line: self.line,
                     });
@@ -34,13 +35,10 @@ impl<'source> Lexer<'source> {
             let span = self.logos_lexer.span();
             let lexeme = &self.source[span.clone()];
 
-            match tok {
-                TokenType::NewLine => {
-                    self.line += lexeme.matches('\n').count();
-                    // these tokens are only used for line counting
-                    continue;
-                }
-                _ => (),
+            if tok == TokenType::NewLine  {
+                self.line += lexeme.matches('\n').count();
+                // these tokens are only used for line counting
+                continue;
             }
 
             let literal = match tok {
@@ -67,5 +65,13 @@ impl<'source> Lexer<'source> {
                 line: self.line,
             });
         }
+    }
+}
+
+impl<'source> Iterator for Lexer<'source> {
+    type Item = Token;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next_token()
     }
 }
