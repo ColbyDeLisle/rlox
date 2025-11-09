@@ -35,7 +35,7 @@ impl<'source> Lexer<'source> {
             let span = self.logos_lexer.span();
             let lexeme = &self.source[span.clone()];
 
-            if tok == TokenType::NewLine  {
+            if tok == TokenType::NewLine {
                 self.line += lexeme.matches('\n').count();
                 // these tokens are only used for line counting
                 continue;
