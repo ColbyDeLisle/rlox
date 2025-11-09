@@ -1,3 +1,4 @@
+use crate::Literal;
 use logos::Logos;
 
 #[derive(Logos, Clone, Debug, PartialEq)]
@@ -94,13 +95,6 @@ pub enum TokenType {
     NewLine,
 
     Error,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Literal {
-    Number(f32),
-    String(String),
-    Identifier(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
