@@ -2,6 +2,7 @@ use std::fmt::{Display, Formatter};
 use tokens::Token;
 
 pub mod expr;
+pub mod interpreter;
 pub mod lexer;
 pub mod parser;
 pub mod tokens;

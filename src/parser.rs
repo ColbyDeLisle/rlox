@@ -1,11 +1,8 @@
-use crate::error;
-use crate::expr::{Binary, Grouping, Unary};
-use crate::tokens::TokenType;
 use crate::{
-    Literal,
-    expr::Expr,
+    Literal, error,
+    expr::{Binary, Expr, Grouping, Unary},
     lexer::Lexer,
-    tokens::{Token, TokenType::*},
+    tokens::{Token, TokenType, TokenType::*},
 };
 use std::iter::Peekable;
 
@@ -158,9 +155,12 @@ impl<'source> Parser<'source> {
 
     fn primary(&mut self) -> anyhow::Result<Expr> {
         if self.tokens.peek().is_none() {
-            todo!(); // Throw error
+            let msg = "Unexpected EOF.";
+            self.error(msg);
+            anyhow::bail!(msg.to_string());
         }
 
+        // consume the literal, putting it into self.current
         self.advance();
 
         let p = match &self.previous.token_type {
@@ -274,7 +274,7 @@ mod tests {
                 literal: None,
                 line: 2,
             },
-            right: Box::new(Expr::Literal(Literal::Number(4.0)))
+            right: Box::new(Expr::Literal(Literal::Number(4.0))),
         });
 
         let one_plus_two = Expr::Grouping(Grouping {

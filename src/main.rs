@@ -1,10 +1,10 @@
-use rlox::Literal;
-use rlox::expr::{Binary, Expr, Grouping, Unary};
+use rlox::interpreter::Interpreter;
 use rlox::lexer::Lexer;
 use rlox::parser::Parser;
-use rlox::tokens::{Token, TokenType};
 
 fn main() {
+    // Some test cases:
+
     // let source = r#"
     //     var x = 42;
     //
@@ -14,57 +14,38 @@ fn main() {
     //     var z = % false;
     // "#;
 
-    let source = r#"
-        6 * ((1 + 2) / (3 + (4)))
-    "#;
+    // let source = r#"
+    //     6 * ((1 + 2) / (3 + (4)))
+    // "#;
 
     // let source = r#"
     //     1 + 2
     // "#;
 
     // let source = r#"
+    //     (1 + 2) == ((2 * true) + 5) / 3.0
     // "#;
 
-    let mut lexer = Lexer::new(source);
-    let mut parser = Parser::new(lexer);
+    // let source = r#"
+    // "#;
 
-    let result = parser.unwrap().parse();
+    let source = r#"
+    2 * false
+    "#;
 
-    match result {
-        Ok(expr) => {
-            println!("{}", expr);
+    let lexer = Lexer::new(source);
+    let parser = Parser::new(lexer);
+    let mut interpreter = Interpreter::new();
+
+    let expr = parser.unwrap().parse().unwrap();
+    let value = interpreter.expr(expr);
+
+    match value {
+        Ok(val) => {
+            println!("{}", val);
         }
         _ => {
             println!("found error");
         }
     }
-
-    // for token in lexer {
-    //     println!("{:?}", token);
-    // }
-    //
-    // let minus_123 = Expr::Unary(Unary {
-    //     operator: Token {
-    //         token_type: TokenType::Minus,
-    //         lexeme: "-".to_string(),
-    //         literal: None,
-    //         line: 1,
-    //     },
-    //     right: Box::new(Expr::Literal(Literal::Number(123.0))),
-    // });
-    // let group_45_67 = Expr::Grouping(Grouping {
-    //     expression: Box::new(Expr::Literal(Literal::Number(45.67)))
-    // });
-    // let product = Expr::Binary(Binary {
-    //     left: Box::new(minus_123),
-    //     operator: Token {
-    //         token_type: TokenType::Star,
-    //         lexeme: "*".to_string(),
-    //         literal: None,
-    //         line: 1,
-    //     },
-    //     right: Box::new(group_45_67),
-    // });
-    //
-    // println!("{}", &product);
 }
