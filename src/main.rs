@@ -2,7 +2,7 @@ use rlox::interpreter::Interpreter;
 use rlox::lexer::Lexer;
 use rlox::parser::Parser;
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     // Some test cases:
 
     // let source = r#"
@@ -23,29 +23,62 @@ fn main() {
     // "#;
 
     // let source = r#"
-    //     (1 + 2) == ((2 * true) + 5) / 3.0
+    //     (1 + 2) == ((2 * 2) + 5) / 3.0
     // "#;
 
     // let source = r#"
     // "#;
 
+    // let source = r#"
+    // 2 * false
+    // "#;
+
+    // let source = r#"
+    //     print "one";
+    //     print !true;
+    //     print 2 + 1;
+    //
+    //     var a = 1;
+    //     var b = 12;
+    //     print a + b;
+    //
+    //     var c;
+    //     print c = "hello";
+    // "#;
+
     let source = r#"
-    2 * false
+        var a = "global a";
+        var b = "global b";
+        var c = "global c";
+        {
+          var a = "outer a";
+          var b = "outer b";
+          {
+            var a = "inner a";
+            print a;
+            print b;
+            print c;
+          }
+
+          {
+            var a = "other inner a";
+            print a;
+          }
+
+          print a;
+          print b;
+          print c;
+        }
+        print a;
+        print b;
+        print c;
+
     "#;
 
     let lexer = Lexer::new(source);
-    let parser = Parser::new(lexer);
+    let mut parser = Parser::new(lexer).unwrap();
     let mut interpreter = Interpreter::new();
+    let stmts = parser.parse().unwrap();
 
-    let expr = parser.unwrap().parse().unwrap();
-    let value = interpreter.expr(expr);
-
-    match value {
-        Ok(val) => {
-            println!("{}", val);
-        }
-        _ => {
-            println!("found error");
-        }
-    }
+    interpreter.interpret(stmts)
 }

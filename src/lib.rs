@@ -5,6 +5,7 @@ pub mod expr;
 pub mod interpreter;
 pub mod lexer;
 pub mod parser;
+pub mod stmt;
 pub mod tokens;
 
 pub(crate) fn error(token: Option<&Token>, message: &str) {

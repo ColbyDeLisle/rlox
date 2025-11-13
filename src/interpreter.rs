@@ -1,9 +1,17 @@
 use crate::{
     Literal, error,
     expr::{Binary, Expr, Unary},
+    stmt::Stmt,
     tokens::TokenType,
 };
-use std::fmt::{Display, Formatter};
+use std::{
+    fmt::{Display, Formatter},
+    mem::take,
+};
+
+mod environment;
+use crate::expr::Assign;
+use environment::Environment;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -26,6 +34,7 @@ impl Display for Value {
 
 #[derive(Debug, Default)]
 pub struct Interpreter {
+    environment: Environment,
     had_runtime_error: bool,
 }
 
@@ -34,13 +43,78 @@ impl Interpreter {
         Self::default()
     }
 
-    pub fn expr(&mut self, expr: Expr) -> anyhow::Result<Value> {
+    pub fn interpret(&mut self, stmts: Vec<Stmt>) -> anyhow::Result<()> {
+        for stmt in stmts {
+            self.stmt(stmt)?;
+        }
+
+        match self.had_runtime_error {
+            false => Ok(()),
+            true => anyhow::bail!(""),
+        }
+    }
+
+    fn stmt(&mut self, stmt: Stmt) -> anyhow::Result<()> {
+        match stmt {
+            Stmt::Block(stmts) => {
+                // NOTE: decided to try this using only `Box`... probably cleaner to use `Rc` or
+                //       `Gc`, but I want to see how long I can get away with this
+
+                // remove previous environment data, replacing with a new one w/ empty values...
+                let previous_environment_values = take(&mut self.environment.values);
+                // ...and enclosed by the previous environment.
+                let previous_environment_enclosing = self.environment.enclosing.take();
+                self.environment.enclosing = Some(Box::new(Environment {
+                    values: previous_environment_values,
+                    enclosing: previous_environment_enclosing,
+                }));
+
+                let mut had_error = false;
+                for stmt in stmts {
+                    let result = self.stmt(stmt);
+                    if result.is_err() {
+                        had_error = true;
+                    }
+                }
+
+                // remove temp. environment data and replace original
+                let tmp_environment_enclosing = self.environment.enclosing.take();
+                let previous_environment = *tmp_environment_enclosing.unwrap();
+                self.environment = previous_environment;
+
+                if had_error { anyhow::bail!("") } else { Ok(()) }
+            }
+            Stmt::Var(token, expr) => {
+                let value = match expr {
+                    Some(expr) => Some(self.expr(expr)?),
+                    None => None,
+                };
+
+                self.environment.define(token.lexeme, value);
+
+                Ok(())
+            }
+            Stmt::Expression(expr) => self.expr_stmt(expr),
+            Stmt::Print(expr) => self.print_stmt(expr),
+        }
+    }
+
+    fn expr(&mut self, expr: Expr) -> anyhow::Result<Value> {
         match expr {
+            Expr::Assign(assign) => self.assign(assign),
             Expr::Binary(binary) => self.binary(binary),
             Expr::Grouping(grouping) => self.expr(*grouping.expression),
             Expr::Literal(literal) => self.literal(literal),
             Expr::Unary(unary) => self.unary(unary),
+            Expr::Variable(token) => self.environment.get(&token),
         }
+    }
+
+    fn assign(&mut self, assign: Assign) -> anyhow::Result<Value> {
+        let value = self.expr(*assign.value)?;
+        self.environment.assign(&assign.name, value.clone())?;
+
+        Ok(value)
     }
 
     fn literal(&self, literal: Literal) -> anyhow::Result<Value> {
@@ -146,6 +220,17 @@ impl Interpreter {
 
         Ok(value)
     }
+
+    fn expr_stmt(&mut self, expr: Expr) -> anyhow::Result<()> {
+        self.expr(expr)?;
+        Ok(())
+    }
+
+    fn print_stmt(&mut self, expr: Expr) -> anyhow::Result<()> {
+        let value = self.expr(expr)?;
+        println!("{value}");
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -186,7 +271,7 @@ mod tests {
         let mut interpreter = Interpreter::new();
 
         assert_eq!(
-            interpreter.expr(parser.parse().unwrap()).unwrap(),
+            interpreter.expr(parser.expr().unwrap()).unwrap(),
             Value::Bool(true)
         );
     }
@@ -198,6 +283,44 @@ mod tests {
         let mut parser = Parser::new(lexer).unwrap();
         let mut interpreter = Interpreter::new();
 
-        assert!(interpreter.expr(parser.parse().unwrap()).is_err());
+        assert!(interpreter.expr(parser.expr().unwrap()).is_err());
+    }
+
+    #[test]
+    fn test_interpret_scope() {
+        // run manually to check the print statement.
+
+        let source = r#"
+            var a = 0;
+            var b = 1;
+
+            {
+              var b = 11;
+              var c = 4;
+              a = a + b;
+            }
+
+            a = a + b;
+
+            print a;
+        "#;
+        let lexer = Lexer::new(source);
+        let mut parser = Parser::new(lexer).unwrap();
+        let stmts = parser.parse().unwrap();
+        assert_eq!(stmts.len(), 5);
+
+        let mut interpreter = Interpreter::new();
+        let res = interpreter.interpret(stmts);
+        assert!(res.is_ok());
+        assert!(interpreter.environment.enclosing.is_none());
+        match interpreter.environment.values.get("a") {
+            None => assert!(false),
+            Some(value) => assert_eq!(*value, Some(Value::Number(12.0))),
+        }
+        match interpreter.environment.values.get("b") {
+            None => assert!(false),
+            Some(value) => assert_eq!(*value, Some(Value::Number(1.0))),
+        }
+        assert!(interpreter.environment.values.get("c").is_none());
     }
 }
