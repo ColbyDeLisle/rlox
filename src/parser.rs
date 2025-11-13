@@ -1,7 +1,9 @@
+use crate::stmt::Stmt::Block;
 use crate::{
     Literal, error,
-    expr::{Binary, Expr, Grouping, Unary},
+    expr::{Assign, Binary, Expr, Grouping, Unary},
     lexer::Lexer,
+    stmt::Stmt,
     tokens::{Token, TokenType, TokenType::*},
 };
 use std::iter::Peekable;
@@ -39,8 +41,77 @@ impl<'source> Parser<'source> {
         }
     }
 
-    pub fn parse(&mut self) -> anyhow::Result<Expr> {
-        self.expression()
+    pub fn parse(&mut self) -> anyhow::Result<Vec<Stmt>> {
+        let mut stmts: Vec<Stmt> = vec![];
+
+        while self.tokens.peek().is_some() {
+            stmts.push(self.decl()?);
+        }
+
+        Ok(stmts)
+    }
+
+    pub(crate) fn decl(&mut self) -> anyhow::Result<Stmt> {
+        let stmt: anyhow::Result<Stmt> = if self.matches(&[Var]) {
+            self.decl_stmt()
+        } else {
+            self.stmt()
+        };
+
+        if stmt.is_err() {
+            self.synchronize();
+        }
+
+        stmt
+    }
+
+    fn decl_stmt(&mut self) -> anyhow::Result<Stmt> {
+        self.consume(Identifier, "Expect variable name.")?;
+        let name = self.previous.clone();
+
+        let mut initializer: Option<Expr> = None;
+        if self.matches(&[Equal]) {
+            initializer = Some(self.expr()?);
+        }
+
+        self.consume(Semicolon, "Expect ';' after variable declaration.")?;
+
+        Ok(Stmt::Var(name, initializer))
+    }
+
+    fn stmt(&mut self) -> anyhow::Result<Stmt> {
+        if self.matches(&[LeftBrace]) {
+            self.block()
+        } else if self.matches(&[Print]) {
+            self.print_stmt()
+        } else {
+            self.expr_stmt()
+        }
+    }
+
+    fn block(&mut self) -> anyhow::Result<Stmt> {
+        let mut statements: Vec<Stmt> = vec![];
+
+        while !self.check(&RightBrace) & self.tokens.peek().is_some() {
+            statements.push(self.decl()?);
+        }
+        self.consume(RightBrace, "Expect '}' after block.")?;
+
+        Ok(Block(statements))
+    }
+
+    fn print_stmt(&mut self) -> anyhow::Result<Stmt> {
+        let value = self.expr()?;
+        self.consume(Semicolon, "Expect ';' after value.")?;
+
+        Ok(Stmt::Print(value))
+    }
+
+    fn expr_stmt(&mut self) -> anyhow::Result<Stmt> {
+        let expr = self.expr()?;
+        self.consume(Semicolon, "Expect ';' after expression.")?;
+
+        Ok(Stmt::Expression(expr))
     }
 
     fn error(&mut self, message: &str) {
@@ -72,8 +143,30 @@ impl<'source> Parser<'source> {
         }
     }
 
-    fn expression(&mut self) -> anyhow::Result<Expr> {
-        self.equality()
+    pub(crate) fn expr(&mut self) -> anyhow::Result<Expr> {
+        self.assignment()
+    }
+
+    fn assignment(&mut self) -> anyhow::Result<Expr> {
+        let l_expr = self.equality()?;
+
+        if self.matches(&[Equal]) {
+            let value = self.assignment()?;
+
+            match l_expr {
+                Expr::Variable(token) => {
+                    return Ok(Expr::Assign(Assign {
+                        name: token,
+                        value: Box::new(value),
+                    }));
+                }
+                _ => {
+                    self.error("Invalid assignment target.");
+                }
+            }
+        }
+
+        Ok(l_expr)
     }
 
     fn equality(&mut self) -> anyhow::Result<Expr> {
@@ -170,8 +263,9 @@ impl<'source> Parser<'source> {
             Number | String => {
                 Expr::Literal(self.previous.clone().literal.expect("can get literal"))
             }
+            Identifier => Expr::Variable(self.previous.clone()),
             LeftParen => {
-                let expr = self.expression()?;
+                let expr = self.expr()?;
                 self.consume(RightParen, "Expect ')' after expression.")?;
                 return Ok(Expr::Grouping(Grouping {
                     expression: Box::new(expr),
@@ -234,7 +328,7 @@ mod tests {
         let lexer = Lexer::new(source);
         let mut parser = Parser::new(lexer).expect("can create parser");
 
-        let expr = parser.parse().expect("can parse expr");
+        let expr = parser.expr().expect("can parse expr");
 
         let one = Expr::Literal(Literal::Number(1.0));
         let two = Expr::Literal(Literal::Number(2.0));
@@ -262,7 +356,7 @@ mod tests {
         let lexer = Lexer::new(source);
         let mut parser = Parser::new(lexer).expect("can create parser");
 
-        let expr = parser.parse().expect("can parse expr");
+        let expr = parser.expr().expect("can parse expr");
 
         let one = Expr::Literal(Literal::Number(1.0));
         let two = Expr::Literal(Literal::Number(2.0));
@@ -327,7 +421,7 @@ mod tests {
         let lexer = Lexer::new(source);
         let mut parser = Parser::new(lexer).expect("can create parser");
 
-        let result = parser.parse();
+        let result = parser.expr();
 
         assert!(result.is_err());
         assert!(parser.had_error);
