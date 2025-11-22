@@ -1,4 +1,4 @@
-use crate::stmt::Stmt::Block;
+use crate::expr::Logical;
 use crate::{
     Literal, error,
     expr::{Assign, Binary, Expr, Grouping, Unary},
@@ -80,13 +80,87 @@ impl<'source> Parser<'source> {
     }
 
     fn stmt(&mut self) -> anyhow::Result<Stmt> {
-        if self.matches(&[LeftBrace]) {
+        if self.matches(&[If]) {
+            self.if_stmt()
+        } else if self.matches(&[While]) {
+            self.while_stmt()
+        } else if self.matches(&[For]) {
+            self.for_stmt()
+        } else if self.matches(&[LeftBrace]) {
             self.block()
         } else if self.matches(&[Print]) {
             self.print_stmt()
         } else {
             self.expr_stmt()
         }
+    }
+
+    fn if_stmt(&mut self) -> anyhow::Result<Stmt> {
+        self.consume(LeftParen, "Expect '(' after 'if'.")?;
+        let condition = self.expr()?;
+        self.consume(RightParen, "Expect ')' after condition.")?;
+
+        let then_branch = Box::new(self.stmt()?);
+        let else_branch = if self.matches(&[Else]) {
+            Some(Box::new(self.stmt()?))
+        } else {
+            None
+        };
+
+        Ok(Stmt::If(condition, then_branch, else_branch))
+    }
+
+    fn while_stmt(&mut self) -> anyhow::Result<Stmt> {
+        self.consume(LeftParen, "Expect '(' after 'while'.")?;
+        let condition = self.expr()?;
+        self.consume(RightParen, "Expect ')' after condition.")?;
+        let body = self.stmt()?;
+
+        Ok(Stmt::While(condition, Box::new(body)))
+    }
+
+    fn for_stmt(&mut self) -> anyhow::Result<Stmt> {
+        self.consume(LeftParen, "Expect '(' after 'for'.")?;
+
+        let initializer = if self.matches(&[Semicolon]) {
+            None
+        } else if self.matches(&[Var]) {
+            Some(self.decl_stmt()?)
+        } else {
+            Some(self.expr_stmt()?)
+        };
+
+        let condition = if self.check(&Semicolon) {
+            None
+        } else {
+            Some(self.expr()?)
+        };
+        self.consume(Semicolon, "Expect ';' after loop condition.")?;
+
+        let increment = if self.check(&RightParen) {
+            None
+        } else {
+            Some(self.expr()?)
+        };
+
+        self.consume(RightParen, "Expect ')' after for clauses.")?;
+
+        let mut body = self.stmt()?;
+
+        if let Some(increment) = increment {
+            body = Stmt::Block(vec![body, Stmt::Expression(increment)]);
+        }
+
+        body = Stmt::While(
+            condition.unwrap_or(Expr::Literal(Literal::Bool(true))),
+            Box::new(body),
+        );
+
+        if let Some(initializer) = initializer {
+            body = Stmt::Block(vec![initializer, body]);
+        }
+
+        Ok(body)
     }
 
     fn block(&mut self) -> anyhow::Result<Stmt> {
@@ -97,7 +171,7 @@ impl<'source> Parser<'source> {
         }
         self.consume(RightBrace, "Expect '}' after block.")?;
 
-        Ok(Block(statements))
+        Ok(Stmt::Block(statements))
     }
 
     fn print_stmt(&mut self) -> anyhow::Result<Stmt> {
@@ -148,7 +222,7 @@ impl<'source> Parser<'source> {
     }
 
     fn assignment(&mut self) -> anyhow::Result<Expr> {
-        let l_expr = self.equality()?;
+        let l_expr = self.logical_or()?;
 
         if self.matches(&[Equal]) {
             let value = self.assignment()?;
@@ -167,6 +241,38 @@ impl<'source> Parser<'source> {
         }
 
         Ok(l_expr)
+    }
+
+    fn logical_or(&mut self) -> anyhow::Result<Expr> {
+        let mut expr: Expr = self.logical_and()?;
+
+        while self.matches(&[Or]) {
+            let operator: Token = self.previous.clone();
+            let right: Expr = self.logical_and()?;
+            expr = Expr::Logical(Logical {
+                left: Box::new(expr),
+                operator,
+                right: Box::new(right),
+            });
+        }
+
+        Ok(expr)
+    }
+
+    fn logical_and(&mut self) -> anyhow::Result<Expr> {
+        let mut expr: Expr = self.equality()?;
+
+        while self.matches(&[And]) {
+            let operator: Token = self.previous.clone();
+            let right: Expr = self.equality()?;
+            expr = Expr::Logical(Logical {
+                left: Box::new(expr),
+                operator,
+                right: Box::new(right),
+            });
+        }
+
+        Ok(expr)
     }
 
     fn equality(&mut self) -> anyhow::Result<Expr> {
@@ -313,9 +419,15 @@ impl<'source> Parser<'source> {
 
 #[cfg(test)]
 mod tests {
+    // Many of these tests use the lexer for convenience. For proper unit testing, one really ought
+    // to factor out the other parts of the crate and e.g. prepare sequences of Tokens manually.
+
+    use crate::expr::Assign;
+    use crate::interpreter::Value;
+    use crate::stmt::Stmt;
     use crate::{
         Literal,
-        expr::{Binary, Expr, Grouping, Unary},
+        expr::{Binary, Expr, Grouping, Logical, Unary},
         lexer::Lexer,
         parser::Parser,
         tokens::{Token, TokenType},
@@ -412,8 +524,190 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_logical() {
+        let source = "5 and true or false";
+
+        let lexer = Lexer::new(source);
+        let mut parser = Parser::new(lexer).expect("can create parser");
+
+        let expr = parser.expr().expect("can parse expr");
+
+        let five = Expr::Literal(Literal::Number(5.0));
+        let tru = Expr::Literal(Literal::Bool(true));
+        let fls = Expr::Literal(Literal::Bool(false));
+        let five_and_tru = Expr::Logical(Logical {
+            left: Box::new(five),
+            operator: Token {
+                token_type: TokenType::And,
+                lexeme: "and".to_string(),
+                literal: None,
+                line: 1,
+            },
+            right: Box::new(tru),
+        });
+
+        let expected_expr = Expr::Logical(Logical {
+            left: Box::new(five_and_tru),
+            operator: Token {
+                token_type: TokenType::Or,
+                lexeme: "or".to_string(),
+                literal: None,
+                line: 1,
+            },
+            right: Box::new(fls),
+        });
+
+        assert_eq!(expr, expected_expr);
+    }
+
+    #[test]
+    fn test_parse_if() {
+        let source = r#"
+            if (1 == 2) {
+                print "help!";
+            }
+        "#;
+
+        let lexer = Lexer::new(source);
+        let mut parser = Parser::new(lexer).expect("can create parser");
+
+        let stmt = parser.stmt().expect("can parse expr");
+
+        let one = Expr::Literal(Literal::Number(1.0));
+        let two = Expr::Literal(Literal::Number(2.0));
+        let one_equal_two = Expr::Binary(Binary {
+            left: Box::new(one),
+            operator: Token {
+                token_type: TokenType::EqualEqual,
+                lexeme: "==".to_string(),
+                literal: None,
+                line: 2,
+            },
+            right: Box::new(two),
+        });
+
+        let help = Expr::Literal(Literal::String(String::from("help!")));
+        let print_help = Stmt::Print(help);
+        let block_print_help = Stmt::Block(vec![print_help]);
+
+        let expected_stmt = Stmt::If(one_equal_two, Box::new(block_print_help), None);
+
+        assert_eq!(stmt, expected_stmt);
+    }
+
+    #[test]
+    fn test_parse_if_else() {
+        let source = r#"
+            if (1 == 2) {
+                print "help!";
+            }
+            else {
+                print "nvm.";
+            }
+        "#;
+
+        let lexer = Lexer::new(source);
+        let mut parser = Parser::new(lexer).expect("can create parser");
+
+        let stmt = parser.stmt().expect("can parse expr");
+
+        let one = Expr::Literal(Literal::Number(1.0));
+        let two = Expr::Literal(Literal::Number(2.0));
+        let one_equal_two = Expr::Binary(Binary {
+            left: Box::new(one),
+            operator: Token {
+                token_type: TokenType::EqualEqual,
+                lexeme: "==".to_string(),
+                literal: None,
+                line: 2,
+            },
+            right: Box::new(two),
+        });
+
+        let help = Expr::Literal(Literal::String(String::from("help!")));
+        let print_help = Stmt::Print(help);
+        let block_print_help = Stmt::Block(vec![print_help]);
+
+        let nvm = Expr::Literal(Literal::String(String::from("nvm.")));
+        let print_nvm = Stmt::Print(nvm);
+        let block_print_nvm = Stmt::Block(vec![print_nvm]);
+
+        let expected_stmt = Stmt::If(
+            one_equal_two,
+            Box::new(block_print_help),
+            Some(Box::new(block_print_nvm)),
+        );
+
+        assert_eq!(stmt, expected_stmt);
+    }
+
+    #[test]
+    fn test_parse_while() {
+        let source = r#"
+            var i = 0;
+            while (i < 10) {
+                print i;
+                i = i + 1;
+            }
+        "#;
+
+        let lexer = Lexer::new(source);
+        let mut parser = Parser::new(lexer).expect("can create parser");
+
+        let stmts = parser.parse().expect("can parse source");
+
+        assert_eq!(stmts.len(), 2);
+        // don't care so much about the declaration here
+        assert!(matches!(&stmts[0], Stmt::Var(_, _)));
+
+        fn i_at_line(line: usize) -> Token {
+            Token {
+                token_type: TokenType::Identifier,
+                lexeme: String::from("i"),
+                literal: Some(Literal::Identifier(String::from("i"))),
+                line,
+            }
+        }
+
+        let one = Expr::Literal(Literal::Number(1.0));
+        let ten = Expr::Literal(Literal::Number(10.0));
+        let i_less_than_ten = Expr::Binary(Binary {
+            left: Box::new(Expr::Variable(i_at_line(3))),
+            operator: Token {
+                token_type: TokenType::Less,
+                lexeme: String::from("<"),
+                literal: None,
+                line: 3,
+            },
+            right: Box::new(ten),
+        });
+        let print_i = Stmt::Print(Expr::Variable(i_at_line(4)));
+        let i_plus_one = Expr::Binary(Binary {
+            left: Box::new(Expr::Variable(i_at_line(5))),
+            operator: Token {
+                token_type: TokenType::Plus,
+                lexeme: String::from("+"),
+                literal: None,
+                line: 5,
+            },
+            right: Box::new(one),
+        });
+        let i_equals_i_plus_one = Stmt::Expression(Expr::Assign(Assign {
+            name: i_at_line(5),
+            value: Box::new(i_plus_one),
+        }));
+
+        let while_loop = Stmt::While(
+            i_less_than_ten,
+            Box::new(Stmt::Block(vec![print_i, i_equals_i_plus_one])),
+        );
+
+        assert_eq!(stmts[1], while_loop);
+    }
+
+    #[test]
     fn test_parse_expr_err() {
-        // same as above, with missing right paren
+        // missing right paren
         let source = r#"
             4 * (3 / (1 + 2)
         "#;

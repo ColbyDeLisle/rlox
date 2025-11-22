@@ -8,6 +8,7 @@ pub enum Expr {
     Binary(Binary),
     Grouping(Grouping),
     Literal(Literal),
+    Logical(Logical),
     Unary(Unary),
     Variable(Token), // here I'm not using a separate struct for the data
 }
@@ -19,6 +20,7 @@ impl Display for Expr {
             Expr::Binary(binary) => write!(f, "{binary}"),
             Expr::Grouping(grouping) => write!(f, "{grouping}"),
             Expr::Literal(literal) => write!(f, "{literal}"),
+            Expr::Logical(logical) => write!(f, "{logical}"),
             Expr::Unary(unary) => write!(f, "{unary}"),
             Expr::Variable(token) => write!(f, "{}", token.lexeme),
         }
@@ -58,6 +60,19 @@ pub struct Grouping {
 impl Display for Grouping {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "({})", self.expression)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Logical {
+    pub left: Box<Expr>,
+    pub operator: Token,
+    pub right: Box<Expr>,
+}
+
+impl Display for Logical {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({} {} {})", self.operator.lexeme, self.left, self.right)
     }
 }
 

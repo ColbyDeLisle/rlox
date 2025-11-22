@@ -46,33 +46,55 @@ fn main() -> anyhow::Result<()> {
     //     print c = "hello";
     // "#;
 
+    // let source = r#"
+    //     var a = "global a";
+    //     var b = "global b";
+    //     var c = "global c";
+    //     {
+    //       var a = "outer a";
+    //       var b = "outer b";
+    //       {
+    //         var a = "inner a";
+    //         print a;
+    //         print b;
+    //         print c;
+    //       }
+    //
+    //       {
+    //         var a = "other inner a";
+    //         print a;
+    //       }
+    //
+    //       print a;
+    //       print b;
+    //       print c;
+    //     }
+    //     print a;
+    //     print b;
+    //     print c;
+    //
+    //     print "hi" or 2;
+    //     print nil or "yes";
+    //     print nil and "maybe";
+    //     print "possibly" and "maybe";
+    //
+    //     var i = 0;
+    //     while (i < 10) {
+    //         print i;
+    //         i = i + 1;
+    //     }
+    //
+    // "#;
+
     let source = r#"
-        var a = "global a";
-        var b = "global b";
-        var c = "global c";
-        {
-          var a = "outer a";
-          var b = "outer b";
-          {
-            var a = "inner a";
-            print a;
-            print b;
-            print c;
-          }
+        var a = 0;
+        var temp;
 
-          {
-            var a = "other inner a";
-            print a;
-          }
-
+        for (var b = 1; a < 10000; b = temp + b) {
           print a;
-          print b;
-          print c;
+          temp = a;
+          a = b;
         }
-        print a;
-        print b;
-        print c;
-
     "#;
 
     let lexer = Lexer::new(source);

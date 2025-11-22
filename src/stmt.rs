@@ -3,28 +3,48 @@ use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
+    If(Expr, Box<Stmt>, Option<Box<Stmt>>),
+    While(Expr, Box<Stmt>),
     Block(Vec<Stmt>),
     Expression(Expr),
-    Print(Expr),
     Var(Token, Option<Expr>),
+    Print(Expr),
 }
 
 impl Display for Stmt {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            Stmt::If(condition, then_branch, None) => {
+                writeln!(f, "if ({condition}) {{")?;
+                writeln!(f, "{then_branch}")?;
+                writeln!(f, "}}")
+            }
+            Stmt::If(condition, then_branch, Some(else_branch)) => {
+                writeln!(f, "if ({condition}) {{")?;
+                writeln!(f, "{then_branch}")?;
+                writeln!(f, "}}")?;
+                writeln!(f, "else {{")?;
+                writeln!(f, "{else_branch}")?;
+                writeln!(f, "}}")
+            }
+            Stmt::While(condition, body) => {
+                writeln!(f, "while ({condition}) {{")?;
+                writeln!(f, "{body}")?;
+                writeln!(f, "}}")
+            }
             Stmt::Block(stmts) => {
                 writeln!(f, "{{")?;
                 for stmt in stmts {
                     writeln!(f, "{stmt}")?;
                 }
-                write!(f, "}}")
+                writeln!(f, "}}")
             }
-            Stmt::Expression(expr) => write!(f, "{expr};"),
-            Stmt::Print(expr) => write!(f, "print {expr};"),
-            Stmt::Var(token, None) => write!(f, "var {};", token.lexeme),
+            Stmt::Expression(expr) => writeln!(f, "{expr};"),
+            Stmt::Var(token, None) => writeln!(f, "var {};", token.lexeme),
             Stmt::Var(token, Some(initializer)) => {
-                write!(f, "var {} = {};", token.lexeme, initializer)
+                writeln!(f, "var {} = {};", token.lexeme, initializer)
             }
+            Stmt::Print(expr) => writeln!(f, "print {expr};"),
         }
     }
 }
