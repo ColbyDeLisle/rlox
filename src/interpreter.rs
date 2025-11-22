@@ -10,7 +10,7 @@ use std::{
 };
 
 mod environment;
-use crate::expr::Assign;
+use crate::expr::{Assign, Logical};
 use environment::Environment;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -56,6 +56,31 @@ impl Interpreter {
 
     fn stmt(&mut self, stmt: Stmt) -> anyhow::Result<()> {
         match stmt {
+            Stmt::If(condition, then_branch, else_branch) => {
+                let condition_value = self.expr(condition)?;
+
+                if self.is_truthy(&condition_value) {
+                    self.stmt(*then_branch)?;
+                } else if let Some(stmt) = else_branch {
+                    self.stmt(*stmt)?;
+                }
+
+                Ok(())
+            }
+            Stmt::While(condition, body) => {
+                // Here is another place where using only `Box` for indirection gets ugly
+
+                let mut condition_value = self.expr(condition.clone())?;
+
+                while self.is_truthy(&condition_value) {
+                    // Using `Box` causes the need for cloning here.
+                    // I think this might be sufficiently bad for me to want to refactor now!
+                    self.stmt(*body.clone())?;
+                    condition_value = self.expr(condition.clone())?;
+                }
+
+                Ok(())
+            }
             Stmt::Block(stmts) => {
                 // NOTE: decided to try this using only `Box`... probably cleaner to use `Rc` or
                 //       `Gc`, but I want to see how long I can get away with this
@@ -69,6 +94,8 @@ impl Interpreter {
                     enclosing: previous_environment_enclosing,
                 }));
 
+                // We have to catch the error, and not bubble it up immediately, so that we can
+                // ensure we replace the previous environment below.
                 let mut had_error = false;
                 for stmt in stmts {
                     let result = self.stmt(stmt);
@@ -105,6 +132,7 @@ impl Interpreter {
             Expr::Binary(binary) => self.binary(binary),
             Expr::Grouping(grouping) => self.expr(*grouping.expression),
             Expr::Literal(literal) => self.literal(literal),
+            Expr::Logical(logical) => self.logical(logical),
             Expr::Unary(unary) => self.unary(unary),
             Expr::Variable(token) => self.environment.get(&token),
         }
@@ -129,6 +157,26 @@ impl Interpreter {
         Ok(value)
     }
 
+    fn logical(&mut self, logical: Logical) -> anyhow::Result<Value> {
+        let left = self.expr(*logical.left)?;
+
+        match logical.operator.token_type {
+            TokenType::Or => {
+                if self.is_truthy(&left) {
+                    return Ok(left);
+                }
+            }
+            TokenType::And => {
+                if !self.is_truthy(&left) {
+                    return Ok(left);
+                }
+            }
+            _ => unreachable!(),
+        }
+
+        self.expr(*logical.right)
+    }
+
     fn unary(&mut self, unary: Unary) -> anyhow::Result<Value> {
         let right_value = self.expr(*unary.right)?;
 
@@ -140,14 +188,14 @@ impl Interpreter {
                 self.had_runtime_error = true;
                 anyhow::bail!(msg.to_string())
             }
-            (TokenType::Bang, value) => Ok(Value::Bool(!self.is_truthy(value))),
+            (TokenType::Bang, value) => Ok(Value::Bool(!self.is_truthy(&value))),
             _ => panic!(),
         }
     }
 
-    fn is_truthy(&self, value: Value) -> bool {
+    fn is_truthy(&self, value: &Value) -> bool {
         match value {
-            Value::Bool(val) => val,
+            Value::Bool(val) => *val,
             Value::Nil => false,
             _ => true,
         }
@@ -322,5 +370,42 @@ mod tests {
             Some(value) => assert_eq!(*value, Some(Value::Number(1.0))),
         }
         assert!(interpreter.environment.values.get("c").is_none());
+    }
+
+    #[test]
+    fn test_interpret_logical_ops() {
+        // run manually to check the print statement.
+
+        let source = r#"
+            var a = "hi" or 2;
+            var b = nil or "yes";
+            var c = nil and "maybe";
+            var d = "possibly" and "maybe";
+        "#;
+        let lexer = Lexer::new(source);
+        let mut parser = Parser::new(lexer).unwrap();
+        let stmts = parser.parse().unwrap();
+        assert_eq!(stmts.len(), 4);
+
+        let mut interpreter = Interpreter::new();
+        let res = interpreter.interpret(stmts);
+        assert!(res.is_ok());
+        assert!(interpreter.environment.enclosing.is_none());
+        match interpreter.environment.values.get("a") {
+            None => assert!(false),
+            Some(value) => assert_eq!(*value, Some(Value::String(String::from("hi")))),
+        }
+        match interpreter.environment.values.get("b") {
+            None => assert!(false),
+            Some(value) => assert_eq!(*value, Some(Value::String(String::from("yes")))),
+        }
+        match interpreter.environment.values.get("c") {
+            None => assert!(false),
+            Some(value) => assert_eq!(*value, Some(Value::Nil)),
+        }
+        match interpreter.environment.values.get("d") {
+            None => assert!(false),
+            Some(value) => assert_eq!(*value, Some(Value::String(String::from("maybe")))),
+        }
     }
 }
