@@ -485,8 +485,7 @@ mod tests {
 
     #[test]
     fn test_interpret_expr() {
-        // let source = "-(1 + 2) == ((2 * 2) + 5) / -3.0";
-        let source = "1 == 1";
+        let source = "-(1 + 2) == ((2 * 2) + 5) / -3.0";
         let lexer = Lexer::new(source);
         let mut parser = Parser::new(lexer).unwrap();
         let mut interpreter = Interpreter::new();
