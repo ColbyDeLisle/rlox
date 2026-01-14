@@ -6,6 +6,7 @@ use std::fmt::{Display, Formatter};
 pub enum Expr {
     Assign(Assign),
     Binary(Binary),
+    Call(Call),
     Grouping(Grouping),
     Literal(Literal),
     Logical(Logical),
@@ -18,6 +19,7 @@ impl Display for Expr {
         match self {
             Expr::Assign(assign) => write!(f, "{assign}"),
             Expr::Binary(binary) => write!(f, "{binary}"),
+            Expr::Call(call) => write!(f, "{call}"),
             Expr::Grouping(grouping) => write!(f, "{grouping}"),
             Expr::Literal(literal) => write!(f, "{literal}"),
             Expr::Logical(logical) => write!(f, "{logical}"),
@@ -49,6 +51,19 @@ pub struct Binary {
 impl Display for Binary {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "({} {} {})", self.operator.lexeme, self.left, self.right)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Call {
+    pub callee: Box<Expr>,
+    pub paren: Token,
+    pub args: Vec<Expr>,
+}
+
+impl Display for Call {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({:?})", self.callee, &self.args)
     }
 }
 

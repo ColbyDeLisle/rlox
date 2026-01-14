@@ -1,8 +1,8 @@
-use rlox::interpreter::Interpreter;
+use rlox::interpreter::{Interpreter, Value};
 use rlox::lexer::Lexer;
 use rlox::parser::Parser;
 
-fn main() -> anyhow::Result<()> {
+fn main() {
     // Some test cases:
 
     // let source = r#"
@@ -86,21 +86,62 @@ fn main() -> anyhow::Result<()> {
     //
     // "#;
 
-    let source = r#"
-        var a = 0;
-        var temp;
+    // let source = r#"
+    //     var a = 0;
+    //     var temp;
+    //
+    //     for (var b = 1; a < 10000; b = temp + b) {
+    //       print a;
+    //       temp = a;
+    //       a = b;
+    //     }
+    //
+    //     fun sayHi(first, last) {
+    //       print "Hi, " + first + " " + last + "!";
+    //     }
+    //
+    //     sayHi("Dear", "Reader");
+    //
+    //     print(clock() / (60.0 * 60.0 * 24.0 * 365.0));
+    //
+    //     print(sayHi);
+    // "#;
 
-        for (var b = 1; a < 10000; b = temp + b) {
-          print a;
-          temp = a;
-          a = b;
+    let source = r#"
+        fun fib(n) {
+          if (n <= 1) return n;
+          return fib(n - 2) + fib(n - 1);
         }
+
+        for (var i = 0; i < 20; i = i + 1) {
+          print fib(i);
+        }
+    "#;
+
+    let source = r#"
+        fun makeCounter() {
+            var i = 0;
+            
+            fun count() {
+                i = i + 1;
+                print i;
+            }
+
+            return count;
+        }
+
+        var counter = makeCounter();
+        counter(); // "1".
+        counter(); // "2".
     "#;
 
     let lexer = Lexer::new(source);
     let mut parser = Parser::new(lexer).unwrap();
     let mut interpreter = Interpreter::new();
     let stmts = parser.parse().unwrap();
+    // for stmt in &stmts {
+    //     println!("{}", stmt);
+    // }
 
-    interpreter.interpret(stmts)
+    assert!(interpreter.interpret(stmts).is_ok());
 }

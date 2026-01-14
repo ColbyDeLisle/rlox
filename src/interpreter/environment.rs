@@ -1,13 +1,20 @@
 use crate::{Token, error, interpreter::Value};
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct Environment {
-    pub(crate) enclosing: Option<Box<Environment>>,
+    pub(crate) enclosing: Option<Rc<RefCell<Environment>>>,
     pub(crate) values: HashMap<String, Option<Value>>,
 }
 
 impl Environment {
+    pub(crate) fn new_with_enclosing(enclosing: Option<Rc<RefCell<Environment>>>) -> Self {
+        Environment {
+            enclosing,
+            values: HashMap::new(),
+        }
+    }
+
     pub(crate) fn define(&mut self, name: String, value: Option<Value>) {
         self.values.insert(name, value);
     }
@@ -18,7 +25,7 @@ impl Environment {
         match value {
             Some(Some(val)) => Ok(val.clone()),
             _ => match &self.enclosing {
-                Some(environment) => environment.get(name),
+                Some(environment) => environment.borrow().get(name),
                 None => {
                     let msg = format!("Undefined variable '{}'.", &name.lexeme);
                     error(Some(name), msg.as_str());
@@ -35,7 +42,7 @@ impl Environment {
             Ok(())
         } else {
             match &mut self.enclosing {
-                Some(environment) => environment.assign(name, value),
+                Some(environment) => environment.borrow_mut().assign(name, value),
                 None => {
                     let msg = format!("Undefined variable '{}'.", &name.lexeme);
                     error(Some(name), msg.as_str());

@@ -1,5 +1,5 @@
 use crate::{Token, expr::Expr};
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, Formatter, write};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
@@ -9,6 +9,8 @@ pub enum Stmt {
     Expression(Expr),
     Var(Token, Option<Expr>),
     Print(Expr),
+    Function(Token, Vec<Token>, Vec<Stmt>),
+    Return(Token, Option<Expr>),
 }
 
 impl Display for Stmt {
@@ -45,6 +47,21 @@ impl Display for Stmt {
                 writeln!(f, "var {} = {};", token.lexeme, initializer)
             }
             Stmt::Print(expr) => writeln!(f, "print {expr};"),
+            Stmt::Function(name, params, body) => {
+                writeln!(f, "fun {:?}({:?}) {{", name, params)?;
+                for stmt in body {
+                    writeln!(f, "{stmt}")?;
+                }
+                writeln!(f, "}}")
+            }
+            Stmt::Return(keyword, expr) => {
+                if let Some(value) = expr {
+                    writeln!(f, "return {value};")
+                }
+                else {
+                    writeln!(f, "return;")
+                }
+            }
         }
     }
 }
