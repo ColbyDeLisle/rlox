@@ -57,8 +57,7 @@ impl Display for Stmt {
             Stmt::Return(keyword, expr) => {
                 if let Some(value) = expr {
                     writeln!(f, "return {value};")
-                }
-                else {
+                } else {
                     writeln!(f, "return;")
                 }
             }

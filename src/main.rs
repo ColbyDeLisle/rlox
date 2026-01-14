@@ -121,7 +121,7 @@ fn main() {
     let source = r#"
         fun makeCounter() {
             var i = 0;
-            
+
             fun count() {
                 i = i + 1;
                 print i;
@@ -139,9 +139,6 @@ fn main() {
     let mut parser = Parser::new(lexer).unwrap();
     let mut interpreter = Interpreter::new();
     let stmts = parser.parse().unwrap();
-    // for stmt in &stmts {
-    //     println!("{}", stmt);
-    // }
 
     assert!(interpreter.interpret(stmts).is_ok());
 }

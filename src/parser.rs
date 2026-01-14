@@ -1,4 +1,5 @@
 use crate::expr::Logical;
+use crate::interpreter::Value;
 use crate::{
     Literal, error,
     expr::{Assign, Binary, Call, Expr, Grouping, Unary},
@@ -8,7 +9,6 @@ use crate::{
 };
 use std::fmt::{Display, Formatter};
 use std::iter::Peekable;
-use crate::interpreter::Value;
 
 pub struct Parser<'source> {
     tokens: Peekable<Lexer<'source>>,
@@ -130,7 +130,7 @@ impl<'source> Parser<'source> {
         Ok(Stmt::Function(name, params, stmts))
     }
 
-    fn stmt(&mut self) -> anyhow::Result<Stmt> {
+    pub fn stmt(&mut self) -> anyhow::Result<Stmt> {
         if self.matches(&[If]) {
             self.if_stmt()
         } else if self.matches(&[While]) {
@@ -335,7 +335,7 @@ impl<'source> Parser<'source> {
             let operator: Token = self.previous.clone();
             let right: Expr = self.comparison()?;
             expr = Expr::Binary(Binary {
-                left: Box::new(expr),
+                left: Box::new(expr.clone()),
                 operator,
                 right: Box::new(right),
             });

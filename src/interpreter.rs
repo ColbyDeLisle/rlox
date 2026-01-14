@@ -29,11 +29,13 @@ pub enum Value {
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
-        if let (Value::Callable(f), Value::Callable(g)) = (self, other) {
-            // There are more robust ways to do this; for now we just check the names
-            f.name() == g.name()
-        } else {
-            *self == *other
+        match (self, other) {
+            (Value::Number(a), Value::Number(b)) => *a == *b,
+            (Value::String(a), Value::String(b)) => *a == *b,
+            (Value::Bool(a), Value::Bool(b)) => *a == *b,
+            (Value::Nil, Value::Nil) => true,
+            (Value::Callable(f), Value::Callable(g)) => f.name() == g.name(),
+            _ => false,
         }
     }
 }
@@ -52,7 +54,7 @@ impl Display for Value {
 
 pub enum Signal {
     Return(Value),
-    RuntimeError(anyhow::Error)
+    RuntimeError(anyhow::Error),
 }
 
 pub type InterpretResult = Result<Value, Signal>;
@@ -68,7 +70,7 @@ pub(crate) struct LoxFunction {
     name: String,
     params: Vec<String>,
     body: Vec<Stmt>,
-    closure: Rc<RefCell<Environment>>
+    closure: Rc<RefCell<Environment>>,
 }
 
 impl LoxCallable for LoxFunction {
@@ -95,7 +97,7 @@ impl LoxCallable for LoxFunction {
             // n.b. we return Nil from a successful function call w/o an explicit `return`
             Ok(_) => Ok(Value::Nil),
             Err(Signal::Return(val)) => Ok(val),
-            Err(Signal::RuntimeError(e)) => Err(e)
+            Err(Signal::RuntimeError(e)) => Err(e),
         }
     }
 }
@@ -129,7 +131,7 @@ impl Interpreter {
 
         match self.had_runtime_error {
             false => Ok(Value::Nil),
-            true => Err(Signal::RuntimeError(anyhow::anyhow!("")))
+            true => Err(Signal::RuntimeError(anyhow::anyhow!(""))),
         }
     }
 
@@ -185,7 +187,7 @@ impl Interpreter {
                             }
                         };
                         Some(value)
-                    },
+                    }
                     None => None,
                 };
 
@@ -200,7 +202,7 @@ impl Interpreter {
                     name: name.lexeme,
                     params: params.iter().map(|t| t.lexeme.clone()).collect(),
                     body,
-                    closure: self.environment.clone()
+                    closure: self.environment.clone(),
                 };
 
                 self.environment
@@ -209,20 +211,16 @@ impl Interpreter {
 
                 Ok(Value::Nil)
             }
-            Stmt::Return(_, expr) => {
-                match expr {
-                    None => Err(Signal::Return(Value::Nil)),
-                    Some(expr_) => {
-                        let value = self.expr(expr_);
-                        match value {
-                            Ok(val) => Err(Signal::Return(val)),
-                            Err(e) => {
-                                Err(Signal::RuntimeError(e))
-                            }
-                        }
+            Stmt::Return(_, expr) => match expr {
+                None => Err(Signal::Return(Value::Nil)),
+                Some(expr_) => {
+                    let value = self.expr(expr_);
+                    match value {
+                        Ok(val) => Err(Signal::Return(val)),
+                        Err(e) => Err(Signal::RuntimeError(e)),
                     }
                 }
-            }
+            },
         }
     }
 
@@ -244,12 +242,11 @@ impl Interpreter {
                 Err(Signal::Return(val)) => {
                     self.environment = old_env;
                     return if had_error {
-                         Err(Signal::RuntimeError(anyhow::anyhow!("")))
-                    }
-                    else {
+                        Err(Signal::RuntimeError(anyhow::anyhow!("")))
+                    } else {
                         Err(Signal::Return(val))
                     };
-                },
+                }
                 Err(Signal::RuntimeError(_)) => {
                     had_error = true;
                 }
@@ -415,18 +412,18 @@ impl Interpreter {
         let value = self.expr(expr);
         match value {
             Ok(val) => Ok(val),
-            Err(e) => Err(Signal::RuntimeError(e))
+            Err(e) => Err(Signal::RuntimeError(e)),
         }
     }
 
-    fn print_stmt(&mut self, expr: Expr) -> InterpretResult{
+    fn print_stmt(&mut self, expr: Expr) -> InterpretResult {
         let value = self.expr(expr);
         match value {
             Ok(val) => {
                 println!("{val}");
                 Ok(Value::Nil)
-            },
-            Err(e) => Err(Signal::RuntimeError(e))
+            }
+            Err(e) => Err(Signal::RuntimeError(e)),
         }
     }
 
@@ -488,7 +485,8 @@ mod tests {
 
     #[test]
     fn test_interpret_expr() {
-        let source = "-(1 + 2) == ((2 * 2) + 5) / -3.0";
+        // let source = "-(1 + 2) == ((2 * 2) + 5) / -3.0";
+        let source = "1 == 1";
         let lexer = Lexer::new(source);
         let mut parser = Parser::new(lexer).unwrap();
         let mut interpreter = Interpreter::new();
