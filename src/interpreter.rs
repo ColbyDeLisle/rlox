@@ -5,20 +5,39 @@ use crate::{
     tokens::TokenType,
 };
 use std::{
-    fmt::{Display, Formatter},
-    mem::take,
+    cell::RefCell,
+    fmt::{Debug, Display, Formatter},
+    rc::Rc,
+    result::Result,
 };
 
 mod environment;
-use crate::expr::{Assign, Logical};
 use environment::Environment;
+mod native_functions;
+use native_functions::Clock;
 
-#[derive(Debug, Clone, PartialEq)]
+use crate::expr::{Assign, Call, Logical};
+
+#[derive(Debug, Clone)]
 pub enum Value {
     Number(f32),
     String(String),
     Bool(bool),
+    Callable(Rc<dyn LoxCallable>),
     Nil,
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::Number(a), Value::Number(b)) => *a == *b,
+            (Value::String(a), Value::String(b)) => *a == *b,
+            (Value::Bool(a), Value::Bool(b)) => *a == *b,
+            (Value::Nil, Value::Nil) => true,
+            (Value::Callable(f), Value::Callable(g)) => f.name() == g.name(),
+            _ => false,
+        }
+    }
 }
 
 impl Display for Value {
@@ -27,37 +46,105 @@ impl Display for Value {
             Value::Number(val) => write!(f, "{}", val),
             Value::String(val) => write!(f, "{}", val),
             Value::Bool(val) => write!(f, "{}", val),
+            Value::Callable(val) => write!(f, "<fun {}>", val.name()),
             Value::Nil => write!(f, "Nil"),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum Signal {
+    Return(Value),
+    RuntimeError(anyhow::Error),
+}
+
+pub type InterpretResult = Result<Value, Signal>;
+
+pub(crate) trait LoxCallable: Debug {
+    fn name(&self) -> String;
+    fn arity(&self) -> usize;
+    fn call(&self, interpreter: &mut Interpreter, args: &[Value]) -> anyhow::Result<Value>;
+}
+
+#[derive(Debug)]
+pub(crate) struct LoxFunction {
+    name: String,
+    params: Vec<String>,
+    body: Vec<Stmt>,
+    closure: Rc<RefCell<Environment>>,
+}
+
+impl LoxCallable for LoxFunction {
+    fn name(&self) -> String {
+        self.name.clone()
+    }
+
+    fn arity(&self) -> usize {
+        self.params.len()
+    }
+
+    fn call(&self, interpreter: &mut Interpreter, args: &[Value]) -> anyhow::Result<Value> {
+        let env = Rc::new(RefCell::new(Environment::new_with_enclosing(Some(
+            self.closure.clone(),
+        ))));
+
+        for i in 0..self.params.len() {
+            env.borrow_mut()
+                .define(self.params[i].clone(), Some(args[i].clone()));
+        }
+
+        let body_result = interpreter.execute_block_with_env(self.body.clone(), env);
+        match body_result {
+            // n.b. we return Nil from a successful function call w/o an explicit `return`
+            Ok(_) => Ok(Value::Nil),
+            Err(Signal::Return(val)) => Ok(val),
+            Err(Signal::RuntimeError(e)) => Err(e),
         }
     }
 }
 
 #[derive(Debug, Default)]
 pub struct Interpreter {
-    environment: Environment,
+    globals: Rc<RefCell<Environment>>,
+    environment: Rc<RefCell<Environment>>,
     had_runtime_error: bool,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self::default()
+        let env = Rc::new(RefCell::new(Environment::default()));
+        env.borrow_mut().define(
+            String::from("clock"),
+            Some(Value::Callable(Rc::new(Clock {}))),
+        );
+
+        Interpreter {
+            globals: env.clone(),
+            environment: env,
+            had_runtime_error: false,
+        }
     }
 
-    pub fn interpret(&mut self, stmts: Vec<Stmt>) -> anyhow::Result<()> {
+    pub fn interpret(&mut self, stmts: Vec<Stmt>) -> InterpretResult {
         for stmt in stmts {
             self.stmt(stmt)?;
         }
 
         match self.had_runtime_error {
-            false => Ok(()),
-            true => anyhow::bail!(""),
+            false => Ok(Value::Nil),
+            true => Err(Signal::RuntimeError(anyhow::anyhow!(""))),
         }
     }
 
-    fn stmt(&mut self, stmt: Stmt) -> anyhow::Result<()> {
+    fn stmt(&mut self, stmt: Stmt) -> InterpretResult {
         match stmt {
             Stmt::If(condition, then_branch, else_branch) => {
-                let condition_value = self.expr(condition)?;
+                let condition_value = match self.expr(condition) {
+                    Ok(val) => val,
+                    Err(e) => {
+                        return Err(Signal::RuntimeError(e));
+                    }
+                };
 
                 if self.is_truthy(&condition_value) {
                     self.stmt(*then_branch)?;
@@ -65,64 +152,114 @@ impl Interpreter {
                     self.stmt(*stmt)?;
                 }
 
-                Ok(())
+                Ok(Value::Nil)
             }
             Stmt::While(condition, body) => {
-                // Here is another place where using only `Box` for indirection gets ugly
-
-                let mut condition_value = self.expr(condition.clone())?;
+                let mut condition_value = match self.expr(condition.clone()) {
+                    Ok(val) => val,
+                    Err(e) => {
+                        return Err(Signal::RuntimeError(e));
+                    }
+                };
 
                 while self.is_truthy(&condition_value) {
-                    // Using `Box` causes the need for cloning here.
-                    // I think this might be sufficiently bad for me to want to refactor now!
                     self.stmt(*body.clone())?;
-                    condition_value = self.expr(condition.clone())?;
+                    condition_value = match self.expr(condition.clone()) {
+                        Ok(val) => val,
+                        Err(e) => {
+                            return Err(Signal::RuntimeError(e));
+                        }
+                    };
                 }
 
-                Ok(())
+                Ok(Value::Nil)
             }
             Stmt::Block(stmts) => {
-                // NOTE: decided to try this using only `Box`... probably cleaner to use `Rc` or
-                //       `Gc`, but I want to see how long I can get away with this
-
-                // remove previous environment data, replacing with a new one w/ empty values...
-                let previous_environment_values = take(&mut self.environment.values);
-                // ...and enclosed by the previous environment.
-                let previous_environment_enclosing = self.environment.enclosing.take();
-                self.environment.enclosing = Some(Box::new(Environment {
-                    values: previous_environment_values,
-                    enclosing: previous_environment_enclosing,
-                }));
-
-                // We have to catch the error, and not bubble it up immediately, so that we can
-                // ensure we replace the previous environment below.
-                let mut had_error = false;
-                for stmt in stmts {
-                    let result = self.stmt(stmt);
-                    if result.is_err() {
-                        had_error = true;
-                    }
-                }
-
-                // remove temp. environment data and replace original
-                let tmp_environment_enclosing = self.environment.enclosing.take();
-                let previous_environment = *tmp_environment_enclosing.unwrap();
-                self.environment = previous_environment;
-
-                if had_error { anyhow::bail!("") } else { Ok(()) }
+                let new_env = Environment::new_with_enclosing(Some(self.environment.clone()));
+                self.execute_block_with_env(stmts, Rc::new(RefCell::new(new_env)))
             }
             Stmt::Var(token, expr) => {
                 let value = match expr {
-                    Some(expr) => Some(self.expr(expr)?),
+                    Some(expr) => {
+                        let value = match self.expr(expr) {
+                            Ok(val) => val,
+                            Err(e) => {
+                                return Err(Signal::RuntimeError(e));
+                            }
+                        };
+                        Some(value)
+                    }
                     None => None,
                 };
 
-                self.environment.define(token.lexeme, value);
+                self.environment.borrow_mut().define(token.lexeme, value);
 
-                Ok(())
+                Ok(Value::Nil)
             }
             Stmt::Expression(expr) => self.expr_stmt(expr),
             Stmt::Print(expr) => self.print_stmt(expr),
+            Stmt::Function(name, params, body) => {
+                let f = LoxFunction {
+                    name: name.lexeme,
+                    params: params.iter().map(|t| t.lexeme.clone()).collect(),
+                    body,
+                    closure: self.environment.clone(),
+                };
+
+                self.environment
+                    .borrow_mut()
+                    .define(f.name.clone(), Some(Value::Callable(Rc::new(f))));
+
+                Ok(Value::Nil)
+            }
+            Stmt::Return(_, expr) => match expr {
+                None => Err(Signal::Return(Value::Nil)),
+                Some(expr_) => {
+                    let value = self.expr(expr_);
+                    match value {
+                        Ok(val) => Err(Signal::Return(val)),
+                        Err(e) => Err(Signal::RuntimeError(e)),
+                    }
+                }
+            },
+        }
+    }
+
+    pub(crate) fn execute_block_with_env(
+        &mut self,
+        stmts: Vec<Stmt>,
+        env: Rc<RefCell<Environment>>,
+    ) -> InterpretResult {
+        let old_env = self.environment.clone();
+        self.environment = env;
+
+        // We have to catch the error, and not bubble it up immediately, so that we can
+        // ensure we replace the previous environment below.
+        let mut had_error = false;
+
+        for stmt in stmts {
+            match self.stmt(stmt) {
+                Ok(_) => (),
+                Err(Signal::Return(val)) => {
+                    self.environment = old_env;
+                    return if had_error {
+                        Err(Signal::RuntimeError(anyhow::anyhow!("")))
+                    } else {
+                        Err(Signal::Return(val))
+                    };
+                }
+                Err(Signal::RuntimeError(_)) => {
+                    had_error = true;
+                }
+            }
+        }
+
+        self.environment = old_env;
+
+        if had_error {
+            Err(Signal::RuntimeError(anyhow::anyhow!("")))
+        } else {
+            Ok(Value::Nil)
         }
     }
 
@@ -130,17 +267,20 @@ impl Interpreter {
         match expr {
             Expr::Assign(assign) => self.assign(assign),
             Expr::Binary(binary) => self.binary(binary),
+            Expr::Call(call) => self.call(call),
             Expr::Grouping(grouping) => self.expr(*grouping.expression),
             Expr::Literal(literal) => self.literal(literal),
             Expr::Logical(logical) => self.logical(logical),
             Expr::Unary(unary) => self.unary(unary),
-            Expr::Variable(token) => self.environment.get(&token),
+            Expr::Variable(token) => self.environment.borrow().get(&token),
         }
     }
 
     fn assign(&mut self, assign: Assign) -> anyhow::Result<Value> {
         let value = self.expr(*assign.value)?;
-        self.environment.assign(&assign.name, value.clone())?;
+        self.environment
+            .borrow_mut()
+            .assign(&assign.name, value.clone())?;
 
         Ok(value)
     }
@@ -269,15 +409,48 @@ impl Interpreter {
         Ok(value)
     }
 
-    fn expr_stmt(&mut self, expr: Expr) -> anyhow::Result<()> {
-        self.expr(expr)?;
-        Ok(())
+    fn expr_stmt(&mut self, expr: Expr) -> InterpretResult {
+        let value = self.expr(expr);
+        match value {
+            Ok(val) => Ok(val),
+            Err(e) => Err(Signal::RuntimeError(e)),
+        }
     }
 
-    fn print_stmt(&mut self, expr: Expr) -> anyhow::Result<()> {
-        let value = self.expr(expr)?;
-        println!("{value}");
-        Ok(())
+    fn print_stmt(&mut self, expr: Expr) -> InterpretResult {
+        let value = self.expr(expr);
+        match value {
+            Ok(val) => {
+                println!("{val}");
+                Ok(Value::Nil)
+            }
+            Err(e) => Err(Signal::RuntimeError(e)),
+        }
+    }
+
+    fn call(&mut self, call: Call) -> anyhow::Result<Value> {
+        let callee = self.expr(*call.callee)?;
+        let mut args: Vec<Value> = vec![];
+
+        for arg in call.args {
+            args.push(self.expr(arg)?);
+        }
+
+        if let Value::Callable(f) = callee {
+            if args.len() != f.arity() {
+                let msg = format!("Expected {} arguments; got {}.", f.arity(), args.len(),);
+                error(Some(&call.paren.clone()), &msg);
+                self.had_runtime_error = true;
+                anyhow::bail!(msg)
+            }
+
+            f.call(self, &args)
+        } else {
+            let msg = "Can only call functions or classes.";
+            error(Some(&call.paren.clone()), msg);
+            self.had_runtime_error = true;
+            anyhow::bail!(msg.to_string())
+        }
     }
 }
 
@@ -360,16 +533,16 @@ mod tests {
         let mut interpreter = Interpreter::new();
         let res = interpreter.interpret(stmts);
         assert!(res.is_ok());
-        assert!(interpreter.environment.enclosing.is_none());
-        match interpreter.environment.values.get("a") {
+        assert!(interpreter.environment.borrow().enclosing.is_none());
+        match interpreter.environment.borrow().values.get("a") {
             None => assert!(false),
             Some(value) => assert_eq!(*value, Some(Value::Number(12.0))),
         }
-        match interpreter.environment.values.get("b") {
+        match interpreter.environment.borrow().values.get("b") {
             None => assert!(false),
             Some(value) => assert_eq!(*value, Some(Value::Number(1.0))),
         }
-        assert!(interpreter.environment.values.get("c").is_none());
+        assert!(interpreter.environment.borrow().values.get("c").is_none());
     }
 
     #[test]
@@ -390,20 +563,20 @@ mod tests {
         let mut interpreter = Interpreter::new();
         let res = interpreter.interpret(stmts);
         assert!(res.is_ok());
-        assert!(interpreter.environment.enclosing.is_none());
-        match interpreter.environment.values.get("a") {
+        assert!(interpreter.environment.borrow().enclosing.is_none());
+        match interpreter.environment.borrow().values.get("a") {
             None => assert!(false),
             Some(value) => assert_eq!(*value, Some(Value::String(String::from("hi")))),
         }
-        match interpreter.environment.values.get("b") {
+        match interpreter.environment.borrow().values.get("b") {
             None => assert!(false),
             Some(value) => assert_eq!(*value, Some(Value::String(String::from("yes")))),
         }
-        match interpreter.environment.values.get("c") {
+        match interpreter.environment.borrow().values.get("c") {
             None => assert!(false),
             Some(value) => assert_eq!(*value, Some(Value::Nil)),
         }
-        match interpreter.environment.values.get("d") {
+        match interpreter.environment.borrow().values.get("d") {
             None => assert!(false),
             Some(value) => assert_eq!(*value, Some(Value::String(String::from("maybe")))),
         }

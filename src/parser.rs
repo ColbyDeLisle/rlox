@@ -1,17 +1,33 @@
 use crate::expr::Logical;
+use crate::interpreter::Value;
 use crate::{
     Literal, error,
-    expr::{Assign, Binary, Expr, Grouping, Unary},
+    expr::{Assign, Binary, Call, Expr, Grouping, Unary},
     lexer::Lexer,
     stmt::Stmt,
     tokens::{Token, TokenType, TokenType::*},
 };
+use std::fmt::{Display, Formatter};
 use std::iter::Peekable;
 
 pub struct Parser<'source> {
     tokens: Peekable<Lexer<'source>>,
     previous: Token,
     had_error: bool,
+}
+
+pub(crate) enum FunctionKind {
+    Function,
+    Method,
+}
+
+impl Display for FunctionKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FunctionKind::Function => write!(f, "function"),
+            FunctionKind::Method => write!(f, "method"),
+        }
+    }
 }
 
 impl<'source> Parser<'source> {
@@ -54,6 +70,8 @@ impl<'source> Parser<'source> {
     pub(crate) fn decl(&mut self) -> anyhow::Result<Stmt> {
         let stmt: anyhow::Result<Stmt> = if self.matches(&[Var]) {
             self.decl_stmt()
+        } else if self.matches(&[Fun]) {
+            self.function_decl_stmt(FunctionKind::Function)
         } else {
             self.stmt()
         };
@@ -79,7 +97,40 @@ impl<'source> Parser<'source> {
         Ok(Stmt::Var(name, initializer))
     }
 
-    fn stmt(&mut self) -> anyhow::Result<Stmt> {
+    fn function_decl_stmt(&mut self, kind: FunctionKind) -> anyhow::Result<Stmt> {
+        self.consume(Identifier, &format!("Expect {kind} name."))?;
+        let name = self.previous.clone();
+
+        self.consume(LeftParen, &format!("Expect '(' after {kind} name."))?;
+        let mut params: Vec<Token> = vec![];
+        if !self.check(&RightParen) {
+            self.consume(Identifier, "Expect parameter name.")?;
+            params.push(self.previous.clone());
+
+            while self.matches(&[Comma]) {
+                if params.len() >= 255 {
+                    self.error("Can't have more than 255 parameters.");
+                }
+
+                self.consume(Identifier, "Expect parameter name.")?;
+                params.push(self.previous.clone());
+            }
+        }
+        self.consume(RightParen, &format!("Expect ')' after {kind} parameters."))?;
+
+        self.consume(LeftBrace, &format!("Expect '{{' before {kind} body."))?;
+        // n.b., we consume the LeftBrace *before* calling block
+        let body = self.block()?;
+        let Stmt::Block(stmts) = body else {
+            let msg = "Calling block did not return a Block statement. This should never happen.";
+            self.error(msg);
+            anyhow::bail!(msg.to_string());
+        };
+
+        Ok(Stmt::Function(name, params, stmts))
+    }
+
+    pub fn stmt(&mut self) -> anyhow::Result<Stmt> {
         if self.matches(&[If]) {
             self.if_stmt()
         } else if self.matches(&[While]) {
@@ -90,6 +141,8 @@ impl<'source> Parser<'source> {
             self.block()
         } else if self.matches(&[Print]) {
             self.print_stmt()
+        } else if self.matches(&[Return]) {
+            self.return_stmt()
         } else {
             self.expr_stmt()
         }
@@ -282,7 +335,7 @@ impl<'source> Parser<'source> {
             let operator: Token = self.previous.clone();
             let right: Expr = self.comparison()?;
             expr = Expr::Binary(Binary {
-                left: Box::new(expr),
+                left: Box::new(expr.clone()),
                 operator,
                 right: Box::new(right),
             });
@@ -348,8 +401,57 @@ impl<'source> Parser<'source> {
                 right: Box::new(right),
             }))
         } else {
-            self.primary()
+            self.call()
         }
+    }
+
+    fn call(&mut self) -> anyhow::Result<Expr> {
+        let mut expr = self.primary()?;
+
+        loop {
+            if self.matches(&[LeftParen]) {
+                expr = self.finish_call(expr.clone())?;
+            } else {
+                break;
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn finish_call(&mut self, callee: Expr) -> anyhow::Result<Expr> {
+        let mut args: Vec<Expr> = vec![];
+
+        if !self.check(&RightParen) {
+            args.push(self.expr()?);
+            while self.matches(&[Comma]) {
+                if args.len() > 255 {
+                    self.error("Functions may not have more than 255 arguments.");
+                }
+                args.push(self.expr()?);
+            }
+        }
+
+        self.consume(RightParen, "Expect ')' after args.")?;
+
+        Ok(Expr::Call(Call {
+            callee: Box::new(callee),
+            paren: self.previous.clone(),
+            args,
+        }))
+    }
+
+    fn return_stmt(&mut self) -> anyhow::Result<Stmt> {
+        let keyword = self.previous.clone();
+
+        let mut value = None;
+        if !self.check(&Semicolon) {
+            value = Some(self.expr()?);
+        }
+
+        self.consume(Semicolon, "Expect ; after return value.")?;
+
+        Ok(Stmt::Return(keyword, value))
     }
 
     fn primary(&mut self) -> anyhow::Result<Expr> {
