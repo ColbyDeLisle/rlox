@@ -52,6 +52,7 @@ impl Display for Value {
     }
 }
 
+#[derive(Debug)]
 pub enum Signal {
     Return(Value),
     RuntimeError(anyhow::Error),
