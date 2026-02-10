@@ -46,45 +46,45 @@ fn main() {
     //     print c = "hello";
     // "#;
 
-    // let source = r#"
-    //     var a = "global a";
-    //     var b = "global b";
-    //     var c = "global c";
-    //     {
-    //       var a = "outer a";
-    //       var b = "outer b";
-    //       {
-    //         var a = "inner a";
-    //         print a;
-    //         print b;
-    //         print c;
-    //       }
-    //
-    //       {
-    //         var a = "other inner a";
-    //         print a;
-    //       }
-    //
-    //       print a;
-    //       print b;
-    //       print c;
-    //     }
-    //     print a;
-    //     print b;
-    //     print c;
-    //
-    //     print "hi" or 2;
-    //     print nil or "yes";
-    //     print nil and "maybe";
-    //     print "possibly" and "maybe";
-    //
-    //     var i = 0;
-    //     while (i < 10) {
-    //         print i;
-    //         i = i + 1;
-    //     }
-    //
-    // "#;
+    let source = r#"
+        var a = "global a";
+        var b = "global b";
+        var c = "global c";
+        {
+          var a = "outer a";
+          var b = "outer b";
+          {
+            var a = "inner a";
+            print a;
+            print b;
+            print c;
+          }
+
+          {
+            var a = "other inner a";
+            print a;
+          }
+
+          print a;
+          print b;
+          print c;
+        }
+        print a;
+        print b;
+        print c;
+
+        print "hi" or 2;
+        print nil or "yes";
+        print nil and "maybe";
+        print "possibly" and "maybe";
+
+        var i = 0;
+        while (i < 10) {
+            print i;
+            i = i + 1;
+        }
+
+    "#;
 
     // let source = r#"
     //     var a = 0;
@@ -107,33 +107,46 @@ fn main() {
     //     print(sayHi);
     // "#;
 
-    let source = r#"
-        fun fib(n) {
-          if (n <= 1) return n;
-          return fib(n - 2) + fib(n - 1);
-        }
+    // let source = r#"
+    //     fun fib(n) {
+    //       if (n <= 1) return n;
+    //       return fib(n - 2) + fib(n - 1);
+    //     }
+    //
+    //     for (var i = 0; i < 20; i = i + 1) {
+    //       print fib(i);
+    //     }
+    // "#;
 
-        for (var i = 0; i < 20; i = i + 1) {
-          print fib(i);
-        }
-    "#;
+    // let source = r#"
+    //     fun makeCounter() {
+    //         var i = 0;
+    //
+    //         fun count() {
+    //             i = i + 1;
+    //             print i;
+    //         }
+    //
+    //         return count;
+    //     }
+    //
+    //     var counter = makeCounter();
+    //     counter(); // "1".
+    //     counter(); // "2".
+    // "#;
 
-    let source = r#"
-        fun makeCounter() {
-            var i = 0;
-
-            fun count() {
-                i = i + 1;
-                print i;
-            }
-
-            return count;
-        }
-
-        var counter = makeCounter();
-        counter(); // "1".
-        counter(); // "2".
-    "#;
+    // let source = r#"
+    //     var a = "global";
+    //     {
+    //       fun showA() {
+    //         print a;
+    //       }
+    //
+    //       showA();
+    //       var a = "block";
+    //       showA();
+    //     }
+    // "#;
 
     let lexer = Lexer::new(source);
     let mut parser = Parser::new(lexer).unwrap();

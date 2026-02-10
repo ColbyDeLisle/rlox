@@ -1,7 +1,7 @@
 use crate::{Token, expr::Expr};
-use std::fmt::{Display, Formatter, write};
+use std::fmt::{Display, Formatter};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Stmt {
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
     While(Expr, Box<Stmt>),
@@ -54,7 +54,7 @@ impl Display for Stmt {
                 }
                 writeln!(f, "}}")
             }
-            Stmt::Return(keyword, expr) => {
+            Stmt::Return(_keyword, expr) => {
                 if let Some(value) = expr {
                     writeln!(f, "return {value};")
                 } else {

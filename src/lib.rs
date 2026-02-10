@@ -7,6 +7,7 @@ pub mod lexer;
 pub mod parser;
 pub mod stmt;
 pub mod tokens;
+pub mod resolver;
 
 pub(crate) fn error(token: Option<&Token>, message: &str) {
     if let Some(t) = token {
@@ -16,7 +17,7 @@ pub(crate) fn error(token: Option<&Token>, message: &str) {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Literal {
     Number(f32),
     String(String),

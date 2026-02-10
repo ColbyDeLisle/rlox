@@ -2,7 +2,7 @@ use crate::Literal;
 use crate::tokens::Token;
 use std::fmt::{Display, Formatter};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Assign(Assign),
     Binary(Binary),
@@ -29,7 +29,7 @@ impl Display for Expr {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Assign {
     pub name: Token,
     pub value: Box<Expr>,
@@ -41,7 +41,7 @@ impl Display for Assign {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Binary {
     pub left: Box<Expr>,
     pub operator: Token,
@@ -54,7 +54,7 @@ impl Display for Binary {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Call {
     pub callee: Box<Expr>,
     pub paren: Token,
@@ -67,7 +67,7 @@ impl Display for Call {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Grouping {
     pub expression: Box<Expr>,
 }
@@ -78,7 +78,7 @@ impl Display for Grouping {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Logical {
     pub left: Box<Expr>,
     pub operator: Token,
@@ -91,7 +91,7 @@ impl Display for Logical {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Unary {
     pub operator: Token,
     pub right: Box<Expr>,

@@ -1,5 +1,4 @@
 use crate::expr::Logical;
-use crate::interpreter::Value;
 use crate::{
     Literal, error,
     expr::{Assign, Binary, Call, Expr, Grouping, Unary},
