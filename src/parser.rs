@@ -1,5 +1,4 @@
 use crate::expr::Logical;
-use crate::interpreter::Value;
 use crate::{
     Literal, error,
     expr::{Assign, Binary, Call, Expr, Grouping, Unary},
@@ -18,6 +17,7 @@ pub struct Parser<'source> {
 
 pub(crate) enum FunctionKind {
     Function,
+    #[allow(dead_code)]
     Method,
 }
 
@@ -525,7 +525,6 @@ mod tests {
     // to factor out the other parts of the crate and e.g. prepare sequences of Tokens manually.
 
     use crate::expr::Assign;
-    use crate::interpreter::Value;
     use crate::stmt::Stmt;
     use crate::{
         Literal,

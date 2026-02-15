@@ -1,9 +1,11 @@
 use crate::{
     Literal, error,
     expr::{Binary, Expr, Unary},
+    resolver::Resolver,
     stmt::Stmt,
-    tokens::TokenType,
+    tokens::{Token, TokenType},
 };
+use std::collections::HashMap;
 use std::{
     cell::RefCell,
     fmt::{Debug, Display, Formatter},
@@ -11,7 +13,7 @@ use std::{
     result::Result,
 };
 
-mod environment;
+pub(crate) mod environment;
 use environment::Environment;
 mod native_functions;
 use native_functions::Clock;
@@ -60,7 +62,7 @@ pub enum Signal {
 
 pub type InterpretResult = Result<Value, Signal>;
 
-pub(crate) trait LoxCallable: Debug {
+pub trait LoxCallable: Debug {
     fn name(&self) -> String;
     fn arity(&self) -> usize;
     fn call(&self, interpreter: &mut Interpreter, args: &[Value]) -> anyhow::Result<Value>;
@@ -106,6 +108,7 @@ impl LoxCallable for LoxFunction {
 #[derive(Debug, Default)]
 pub struct Interpreter {
     globals: Rc<RefCell<Environment>>,
+    locals: HashMap<Token, usize>,
     environment: Rc<RefCell<Environment>>,
     had_runtime_error: bool,
 }
@@ -120,12 +123,17 @@ impl Interpreter {
 
         Interpreter {
             globals: env.clone(),
+            locals: HashMap::new(),
             environment: env,
             had_runtime_error: false,
         }
     }
 
     pub fn interpret(&mut self, stmts: Vec<Stmt>) -> InterpretResult {
+        let mut resolver = Resolver::new(std::mem::take(self));
+        resolver.resolve(&stmts);
+        *self = std::mem::take(&mut resolver.interpreter);
+
         for stmt in stmts {
             self.stmt(stmt)?;
         }
@@ -272,15 +280,25 @@ impl Interpreter {
             Expr::Literal(literal) => self.literal(literal),
             Expr::Logical(logical) => self.logical(logical),
             Expr::Unary(unary) => self.unary(unary),
-            Expr::Variable(token) => self.environment.borrow().get(&token),
+            Expr::Variable(token) => self.lookup_var(&token),
         }
     }
 
     fn assign(&mut self, assign: Assign) -> anyhow::Result<Value> {
         let value = self.expr(*assign.value)?;
-        self.environment
-            .borrow_mut()
-            .assign(&assign.name, value.clone())?;
+
+        if let Some(distance) = self.locals.get(&assign.name) {
+            Environment::assign_at(
+                self.environment.clone(),
+                *distance,
+                &assign.name,
+                value.clone(),
+            )?;
+        } else {
+            self.globals
+                .borrow_mut()
+                .assign(&assign.name, value.clone())?;
+        }
 
         Ok(value)
     }
@@ -450,6 +468,18 @@ impl Interpreter {
             error(Some(&call.paren.clone()), msg);
             self.had_runtime_error = true;
             anyhow::bail!(msg.to_string())
+        }
+    }
+
+    pub(crate) fn resolve(&mut self, name: Token, depth: usize) {
+        self.locals.insert(name, depth);
+    }
+
+    fn lookup_var(&self, name: &Token) -> anyhow::Result<Value> {
+        if let Some(distance) = self.locals.get(name) {
+            Environment::get_at(self.environment.clone(), *distance, name)
+        } else {
+            self.globals.borrow().get(name)
         }
     }
 }

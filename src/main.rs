@@ -1,4 +1,4 @@
-use rlox::interpreter::{Interpreter, Value};
+use rlox::interpreter::Interpreter;
 use rlox::lexer::Lexer;
 use rlox::parser::Parser;
 
@@ -107,16 +107,16 @@ fn main() {
     //     print(sayHi);
     // "#;
 
-    let source = r#"
-        fun fib(n) {
-          if (n <= 1) return n;
-          return fib(n - 2) + fib(n - 1);
-        }
-
-        for (var i = 0; i < 20; i = i + 1) {
-          print fib(i);
-        }
-    "#;
+    // let source = r#"
+    //     fun fib(n) {
+    //       if (n <= 1) return n;
+    //       return fib(n - 2) + fib(n - 1);
+    //     }
+    //
+    //     for (var i = 0; i < 20; i = i + 1) {
+    //       print fib(i);
+    //     }
+    // "#;
 
     let source = r#"
         fun makeCounter() {
@@ -134,6 +134,19 @@ fn main() {
         counter(); // "1".
         counter(); // "2".
     "#;
+
+    // let source = r#"
+    //     var a = "global";
+    //     {
+    //       fun showA() {
+    //         print a;
+    //       }
+    //
+    //       showA();
+    //       var a = "block";
+    //       showA();
+    //     }
+    // "#;
 
     let lexer = Lexer::new(source);
     let mut parser = Parser::new(lexer).unwrap();

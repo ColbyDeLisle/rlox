@@ -1,7 +1,8 @@
 use crate::Literal;
 use logos::Logos;
+use std::hash::{Hash, Hasher};
 
-#[derive(Logos, Clone, Debug, PartialEq)]
+#[derive(Logos, Clone, Debug, PartialEq, Eq, Hash)]
 // Skip whitespace and comments
 #[logos(skip r"[ \t\r\f]+")]
 #[logos(skip r"//.*")]
@@ -97,10 +98,28 @@ pub enum TokenType {
     Error,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Token {
     pub token_type: TokenType,
     pub lexeme: String,
     pub literal: Option<Literal>,
     pub line: usize,
+}
+
+impl PartialEq for Token {
+    fn eq(&self, other: &Self) -> bool {
+        (self.token_type == other.token_type)
+            && (self.lexeme == other.lexeme)
+            && (self.line == other.line)
+    }
+}
+
+impl Eq for Token {}
+
+impl Hash for Token {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.token_type.hash(state);
+        self.lexeme.hash(state);
+        self.line.hash(state);
+    }
 }
