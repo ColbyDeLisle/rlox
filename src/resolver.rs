@@ -1,19 +1,27 @@
-use std::collections::HashMap;
-use crate::{interpreter::Interpreter, stmt::Stmt, expr::Expr, error};
 use crate::tokens::Token;
+use crate::{error, expr::Expr, interpreter::Interpreter, stmt::Stmt};
+use std::collections::HashMap;
 
 type Scope = HashMap<String, bool>;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum FunctionType {
+    None,
+    Function,
+}
+
 pub(crate) struct Resolver {
     pub(crate) interpreter: Interpreter,
-    scopes: Vec<Scope>
+    scopes: Vec<Scope>,
+    current_function_type: FunctionType,
 }
 
 impl Resolver {
     pub(crate) fn new(interpreter: Interpreter) -> Self {
         Self {
             interpreter,
-            scopes: Vec::new()
+            scopes: Vec::new(),
+            current_function_type: FunctionType::None,
         }
     }
 
@@ -29,30 +37,33 @@ impl Resolver {
                 self.begin_scope();
                 self.resolve(stmts);
                 self.end_scope();
-            },
+            }
             Stmt::Var(token, expr) => {
-                self.declare(token.lexeme.clone());
+                self.declare(token);
                 if let Some(initializer) = expr {
                     self.resolve_expr(&initializer);
                 }
                 self.define(token.lexeme.clone())
-            },
+            }
             Stmt::Function(token, params, body) => {
-                self.declare(token.lexeme.clone());
+                self.declare(token);
                 self.define(token.lexeme.clone());
 
+                let enclosing_function_type = self.current_function_type;
+                self.current_function_type = FunctionType::Function;
                 self.begin_scope();
                 for param in params {
-                    self.declare(param.lexeme.clone());
+                    self.declare(param);
                     self.define(param.lexeme.clone());
                 }
                 self.resolve(body);
                 self.end_scope();
+                self.current_function_type = enclosing_function_type;
             }
             Stmt::Expression(expr) => {
                 self.resolve_expr(&expr);
             }
-            Stmt::If(condition , if_body, else_body) => {
+            Stmt::If(condition, if_body, else_body) => {
                 self.resolve_expr(&condition);
                 self.resolve_stmt(if_body);
                 if let Some(stmt) = else_body {
@@ -62,7 +73,11 @@ impl Resolver {
             Stmt::Print(expr) => {
                 self.resolve_expr(&expr);
             }
-            Stmt::Return(_, expr) => {
+            Stmt::Return(keyword, expr) => {
+                if self.current_function_type == FunctionType::None {
+                    error(Some(keyword), "Can't return from top-level code.");
+                }
+
                 if let Some(expr) = expr {
                     self.resolve_expr(&expr);
                 }
@@ -82,9 +97,15 @@ impl Resolver {
         self.scopes.pop()
     }
 
-    fn declare(&mut self, name: String) {
+    fn declare(&mut self, name: &Token) {
         if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(name, false);
+            if let Some(_) = scope.get(&name.lexeme) {
+                error(
+                    Some(name),
+                    "Already a variable with this name in this scope.",
+                );
+            }
+            scope.insert(name.lexeme.clone(), false);
         }
     }
 
@@ -99,7 +120,10 @@ impl Resolver {
             Expr::Variable(token) => {
                 if let Some(scope) = self.scopes.last_mut() {
                     if scope.get(&token.lexeme) == Some(&false) {
-                        error(Some(&token), "Can't read local variable in its own initializer.");
+                        error(
+                            Some(&token),
+                            "Can't read local variable in its own initializer.",
+                        );
                     }
                 }
 
@@ -136,7 +160,8 @@ impl Resolver {
     fn resolve_local(&mut self, name: &Token) {
         for i in (0..self.scopes.len()).rev() {
             if self.scopes.get(i).unwrap().contains_key(&name.lexeme) {
-                self.interpreter.resolve(name.clone(), self.scopes.len() - 1 - i);
+                self.interpreter
+                    .resolve(name.clone(), self.scopes.len() - 1 - i);
                 break;
             }
         }

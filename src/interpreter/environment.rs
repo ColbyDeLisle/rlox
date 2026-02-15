@@ -35,33 +35,49 @@ impl Environment {
         }
     }
 
-    pub(crate) fn get_at(environment: Rc<RefCell<Environment>>, distance: usize, name: &Token) -> anyhow::Result<Value> {
+    pub(crate) fn get_at(
+        environment: Rc<RefCell<Environment>>,
+        distance: usize,
+        name: &Token,
+    ) -> anyhow::Result<Value> {
         let env = Self::ancestor(environment, distance);
 
         if let Some(env) = env {
             env.borrow().get(name)
-        }
-        else {
-            let msg = format!("Undefined variable '{}' at distance {distance}.", &name.lexeme);
+        } else {
+            let msg = format!(
+                "Undefined variable '{}' at distance {distance}.",
+                &name.lexeme
+            );
             error(Some(name), msg.as_str());
             anyhow::bail!(msg)
         }
     }
 
-    pub(crate) fn assign_at(environment: Rc<RefCell<Environment>>, distance: usize, name: &Token, value: Value) -> anyhow::Result<()> {
+    pub(crate) fn assign_at(
+        environment: Rc<RefCell<Environment>>,
+        distance: usize,
+        name: &Token,
+        value: Value,
+    ) -> anyhow::Result<()> {
         let env = Self::ancestor(environment, distance);
 
         if let Some(env) = env {
             env.borrow_mut().assign(name, value)
-        }
-        else {
-            let msg = format!("Undefined variable '{}' at distance {distance}.", &name.lexeme);
+        } else {
+            let msg = format!(
+                "Undefined variable '{}' at distance {distance}.",
+                &name.lexeme
+            );
             error(Some(name), msg.as_str());
             anyhow::bail!(msg)
         }
     }
 
-    fn ancestor(environment: Rc<RefCell<Environment>>, distance: usize) -> Option<Rc<RefCell<Environment>>> {
+    fn ancestor(
+        environment: Rc<RefCell<Environment>>,
+        distance: usize,
+    ) -> Option<Rc<RefCell<Environment>>> {
         let mut env = Some(environment);
 
         for _ in 0..distance {

@@ -1,17 +1,17 @@
 use crate::{
     Literal, error,
     expr::{Binary, Expr, Unary},
-    stmt::Stmt,
-    tokens::{TokenType, Token},
     resolver::Resolver,
+    stmt::Stmt,
+    tokens::{Token, TokenType},
 };
+use std::collections::HashMap;
 use std::{
     cell::RefCell,
     fmt::{Debug, Display, Formatter},
     rc::Rc,
     result::Result,
 };
-use std::collections::HashMap;
 
 pub(crate) mod environment;
 use environment::Environment;
@@ -62,7 +62,7 @@ pub enum Signal {
 
 pub type InterpretResult = Result<Value, Signal>;
 
-pub(crate) trait LoxCallable: Debug {
+pub trait LoxCallable: Debug {
     fn name(&self) -> String;
     fn arity(&self) -> usize;
     fn call(&self, interpreter: &mut Interpreter, args: &[Value]) -> anyhow::Result<Value>;
@@ -132,9 +132,7 @@ impl Interpreter {
     pub fn interpret(&mut self, stmts: Vec<Stmt>) -> InterpretResult {
         let mut resolver = Resolver::new(std::mem::take(self));
         resolver.resolve(&stmts);
-        
         *self = std::mem::take(&mut resolver.interpreter);
-        dbg!(&self.locals);
 
         for stmt in stmts {
             self.stmt(stmt)?;
@@ -290,10 +288,16 @@ impl Interpreter {
         let value = self.expr(*assign.value)?;
 
         if let Some(distance) = self.locals.get(&assign.name) {
-            Environment::assign_at(self.environment.clone(), *distance, &assign.name, value.clone())?;
-        }
-        else {
-            self.globals.borrow_mut().assign(&assign.name, value.clone())?;
+            Environment::assign_at(
+                self.environment.clone(),
+                *distance,
+                &assign.name,
+                value.clone(),
+            )?;
+        } else {
+            self.globals
+                .borrow_mut()
+                .assign(&assign.name, value.clone())?;
         }
 
         Ok(value)
@@ -474,11 +478,9 @@ impl Interpreter {
     fn lookup_var(&self, name: &Token) -> anyhow::Result<Value> {
         if let Some(distance) = self.locals.get(name) {
             Environment::get_at(self.environment.clone(), *distance, name)
-        }
-        else {
+        } else {
             self.globals.borrow().get(name)
         }
-
     }
 }
 

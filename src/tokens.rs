@@ -108,7 +108,9 @@ pub struct Token {
 
 impl PartialEq for Token {
     fn eq(&self, other: &Self) -> bool {
-        (self.token_type == other.token_type) && (self.lexeme == other.lexeme) && (self.line == other.line)
+        (self.token_type == other.token_type)
+            && (self.lexeme == other.lexeme)
+            && (self.line == other.line)
     }
 }
 
