@@ -36,4 +36,4 @@ jobs:
 
       - name: Test
         working-directory: craftinginterpreters
-        run: dart run tool/bin/test.dart jlox $GITHUB_WORKSPACE/target/release/rlox
+        run: dart run tool/bin/test.dart jlox --interpreter $GITHUB_WORKSPACE/target/release/rlox
