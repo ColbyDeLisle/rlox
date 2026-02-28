@@ -14,6 +14,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Build
+        run: cargo build --release
+
+      - name: Lint
+        run: cargo check
+
+      - name: Lint (Clippy)
+        run: cargo clippy
+
       # Install Dart (Linux)
       - name: Install Dart 2.19
         run: |
@@ -24,16 +33,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y dart=2.19.*
 
-      - name: Build
-        run: cargo build --release
-
-      - name: Clone test suite
-        run: git clone https://github.com/munificent/craftinginterpreters.git
-
       - name: Get Dart dependencies
-        working-directory: craftinginterpreters/tool
+        working-directory: tests/craftinginterpreters/tool
         run: dart pub get
 
-      - name: Test
-        working-directory: craftinginterpreters
+      - name: Test jlox
+        working-directory: tests/craftinginterpreters
         run: dart run tool/bin/test.dart jlox --interpreter $GITHUB_WORKSPACE/target/release/rlox
