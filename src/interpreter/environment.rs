@@ -1,25 +1,39 @@
-use crate::{Token, error, interpreter::Value};
+use crate::interpreter::value::Value;
+use crate::{Token, error};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 #[derive(Debug, Default, Clone)]
-pub(crate) struct Environment {
-    pub(crate) enclosing: Option<Rc<RefCell<Environment>>>,
-    pub(crate) values: HashMap<String, Option<Value>>,
+pub(super) struct Environment {
+    pub(super) enclosing: Option<Rc<RefCell<Environment>>>,
+    pub(super) values: HashMap<String, Option<Value>>,
 }
 
 impl Environment {
-    pub(crate) fn new_with_enclosing(enclosing: Option<Rc<RefCell<Environment>>>) -> Self {
+    pub(super) fn new_with_enclosing(enclosing: Option<Rc<RefCell<Environment>>>) -> Self {
         Environment {
             enclosing,
             values: HashMap::new(),
         }
     }
 
-    pub(crate) fn define(&mut self, name: String, value: Option<Value>) {
+    fn ancestor(
+        environment: Rc<RefCell<Environment>>,
+        distance: usize,
+    ) -> Option<Rc<RefCell<Environment>>> {
+        let mut env = Some(environment);
+
+        for _ in 0..distance {
+            env = env?.borrow().enclosing.clone();
+        }
+
+        env
+    }
+
+    pub(super) fn define(&mut self, name: String, value: Option<Value>) {
         self.values.insert(name, value);
     }
 
-    pub(crate) fn get(&self, name: &Token) -> anyhow::Result<Value> {
+    pub(super) fn get(&self, name: &Token) -> anyhow::Result<Value> {
         let value = self.values.get(&name.lexeme);
 
         match value {
@@ -35,7 +49,7 @@ impl Environment {
         }
     }
 
-    pub(crate) fn get_at(
+    pub(super) fn get_at(
         environment: Rc<RefCell<Environment>>,
         distance: usize,
         name: &Token,
@@ -54,7 +68,24 @@ impl Environment {
         }
     }
 
-    pub(crate) fn assign_at(
+    pub(super) fn assign(&mut self, name: &Token, value: Value) -> anyhow::Result<()> {
+        if self.values.contains_key(&name.lexeme) {
+            self.values.insert(name.lexeme.to_string(), Some(value));
+
+            Ok(())
+        } else {
+            match &mut self.enclosing {
+                Some(environment) => environment.borrow_mut().assign(name, value),
+                None => {
+                    let msg = format!("Undefined variable '{}'.", &name.lexeme);
+                    error(Some(name), msg.as_str());
+                    anyhow::bail!(msg)
+                }
+            }
+        }
+    }
+
+    pub(super) fn assign_at(
         environment: Rc<RefCell<Environment>>,
         distance: usize,
         name: &Token,
@@ -71,36 +102,6 @@ impl Environment {
             );
             error(Some(name), msg.as_str());
             anyhow::bail!(msg)
-        }
-    }
-
-    fn ancestor(
-        environment: Rc<RefCell<Environment>>,
-        distance: usize,
-    ) -> Option<Rc<RefCell<Environment>>> {
-        let mut env = Some(environment);
-
-        for _ in 0..distance {
-            env = env?.borrow().enclosing.clone();
-        }
-
-        env
-    }
-
-    pub(crate) fn assign(&mut self, name: &Token, value: Value) -> anyhow::Result<()> {
-        if self.values.contains_key(&name.lexeme) {
-            self.values.insert(name.lexeme.to_string(), Some(value));
-
-            Ok(())
-        } else {
-            match &mut self.enclosing {
-                Some(environment) => environment.borrow_mut().assign(name, value),
-                None => {
-                    let msg = format!("Undefined variable '{}'.", &name.lexeme);
-                    error(Some(name), msg.as_str());
-                    anyhow::bail!(msg)
-                }
-            }
         }
     }
 }

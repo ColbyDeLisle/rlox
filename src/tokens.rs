@@ -2,10 +2,10 @@ use crate::Literal;
 use logos::Logos;
 use std::hash::{Hash, Hasher};
 
+/// An enum representing the possible token types in Lox.
 #[derive(Logos, Clone, Debug, PartialEq, Eq, Hash)]
-// Skip whitespace and comments
-#[logos(skip r"[ \t\r\f]+")]
-#[logos(skip r"//.*")]
+#[logos(skip r"[ \t\r\f]+")] // skip whitespace
+#[logos(skip r"//.*")] // skip comments
 pub enum TokenType {
     // Single-character tokens
     #[token("(")]
@@ -50,7 +50,7 @@ pub enum TokenType {
     GreaterEqual,
 
     // Literals
-    #[regex(r#"[0-9]+(\.[0-9]+)?"#)]
+    #[regex(r#"([0-9]+)?(\.[0-9]+)|[0-9]+"#)]
     Number,
     #[regex(r#""([^"\\]|\\.)*""#)]
     String,
@@ -98,11 +98,16 @@ pub enum TokenType {
     Error,
 }
 
+/// A Lox token.
 #[derive(Debug, Clone)]
 pub struct Token {
+    /// The type of token.
     pub token_type: TokenType,
+    /// The lexeme representing the token in the source.
     pub lexeme: String,
+    /// The literal value of the token, if it has one.
     pub literal: Option<Literal>,
+    /// The line in the source on which the token occurs.
     pub line: usize,
 }
 

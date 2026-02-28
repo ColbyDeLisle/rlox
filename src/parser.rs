@@ -9,13 +9,8 @@ use crate::{
 use std::fmt::{Display, Formatter};
 use std::iter::Peekable;
 
-pub struct Parser<'source> {
-    tokens: Peekable<Lexer<'source>>,
-    previous: Token,
-    had_error: bool,
-}
-
-pub(crate) enum FunctionKind {
+#[derive(Debug)]
+enum FunctionKind {
     Function,
     #[allow(dead_code)]
     Method,
@@ -30,7 +25,18 @@ impl Display for FunctionKind {
     }
 }
 
+/// The Lox parser.
+pub struct Parser<'source> {
+    /// The stream of tokens used to parse, coming dynamically from the provided lexer.
+    tokens: Peekable<Lexer<'source>>,
+    /// The previously processed `Token`.
+    previous: Token,
+    /// Whether the parser has so far encountered an error.
+    had_error: bool,
+}
+
 impl<'source> Parser<'source> {
+    /// Create a new `Parser`, provided a `Lexer`.
     pub fn new(lexer: Lexer<'source>) -> Option<Self> {
         let mut tokens = lexer.peekable();
         let had_error = false;
@@ -57,6 +63,7 @@ impl<'source> Parser<'source> {
         }
     }
 
+    /// Parse the provided source code into a sequence of statements.
     pub fn parse(&mut self) -> anyhow::Result<Vec<Stmt>> {
         let mut stmts: Vec<Stmt> = vec![];
 
@@ -67,11 +74,11 @@ impl<'source> Parser<'source> {
         Ok(stmts)
     }
 
-    pub(crate) fn decl(&mut self) -> anyhow::Result<Stmt> {
+    fn decl(&mut self) -> anyhow::Result<Stmt> {
         let stmt: anyhow::Result<Stmt> = if self.matches(&[Var]) {
-            self.decl_stmt()
+            self.var_decl()
         } else if self.matches(&[Fun]) {
-            self.function_decl_stmt(FunctionKind::Function)
+            self.fun_decl(FunctionKind::Function)
         } else {
             self.stmt()
         };
@@ -83,7 +90,7 @@ impl<'source> Parser<'source> {
         stmt
     }
 
-    fn decl_stmt(&mut self) -> anyhow::Result<Stmt> {
+    fn var_decl(&mut self) -> anyhow::Result<Stmt> {
         self.consume(Identifier, "Expect variable name.")?;
         let name = self.previous.clone();
 
@@ -97,7 +104,7 @@ impl<'source> Parser<'source> {
         Ok(Stmt::Var(name, initializer))
     }
 
-    fn function_decl_stmt(&mut self, kind: FunctionKind) -> anyhow::Result<Stmt> {
+    fn fun_decl(&mut self, kind: FunctionKind) -> anyhow::Result<Stmt> {
         self.consume(Identifier, &format!("Expect {kind} name."))?;
         let name = self.previous.clone();
 
@@ -130,7 +137,7 @@ impl<'source> Parser<'source> {
         Ok(Stmt::Function(name, params, stmts))
     }
 
-    pub fn stmt(&mut self) -> anyhow::Result<Stmt> {
+    fn stmt(&mut self) -> anyhow::Result<Stmt> {
         if self.matches(&[If]) {
             self.if_stmt()
         } else if self.matches(&[While]) {
@@ -178,7 +185,7 @@ impl<'source> Parser<'source> {
         let initializer = if self.matches(&[Semicolon]) {
             None
         } else if self.matches(&[Var]) {
-            Some(self.decl_stmt()?)
+            Some(self.var_decl()?)
         } else {
             Some(self.expr_stmt()?)
         };
@@ -236,7 +243,7 @@ impl<'source> Parser<'source> {
 
     fn expr_stmt(&mut self) -> anyhow::Result<Stmt> {
         let expr = self.expr()?;
-        self.consume(Semicolon, "Expect ';' after expression.")?;
+        self.consume_without_error(Semicolon); //, "Expect ';' after expression.")?;
 
         Ok(Stmt::Expression(expr))
     }
@@ -461,7 +468,7 @@ impl<'source> Parser<'source> {
             anyhow::bail!(msg.to_string());
         }
 
-        // consume the literal, putting it into self.current
+        // consume the literal
         self.advance();
 
         let p = match &self.previous.token_type {
@@ -496,6 +503,12 @@ impl<'source> Parser<'source> {
         } else {
             self.error(message);
             anyhow::bail!(message.to_string());
+        }
+    }
+
+    fn consume_without_error(&mut self, token_type: TokenType) {
+        if self.check(&token_type) {
+            self.advance();
         }
     }
 
@@ -765,7 +778,7 @@ mod tests {
             Token {
                 token_type: TokenType::Identifier,
                 lexeme: String::from("i"),
-                literal: Some(Literal::Identifier(String::from("i"))),
+                literal: Some(Literal::String(String::from("i"))),
                 line,
             }
         }

@@ -2,7 +2,13 @@ use crate::tokens::Token;
 use crate::{error, expr::Expr, interpreter::Interpreter, stmt::Stmt};
 use std::collections::HashMap;
 
-type Scope = HashMap<String, bool>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SymbolState {
+    Pending,
+    Resolved,
+}
+
+type Scope = HashMap<String, SymbolState>;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum FunctionType {
@@ -10,13 +16,18 @@ enum FunctionType {
     Function,
 }
 
+/// The Lox resolver.
 pub(crate) struct Resolver {
+    /// The Lox interpreter for which symbols are being resolved.
     pub(crate) interpreter: Interpreter,
+    /// A stack of scopes used during resolution.
     scopes: Vec<Scope>,
+    /// Whether the current scope is the body of a callable.
     current_function_type: FunctionType,
 }
 
 impl Resolver {
+    /// Create a new `Resolver`, provided the `Interpreter` it will resolve for.
     pub(crate) fn new(interpreter: Interpreter) -> Self {
         Self {
             interpreter,
@@ -25,6 +36,7 @@ impl Resolver {
         }
     }
 
+    /// Resolve symbols in a sequence of statements, updating the interpreter with the results.
     pub(crate) fn resolve(&mut self, stmts: &[Stmt]) {
         for stmt in stmts {
             self.resolve_stmt(stmt);
@@ -105,13 +117,13 @@ impl Resolver {
                     "Already a variable with this name in this scope.",
                 );
             }
-            scope.insert(name.lexeme.clone(), false);
+            scope.insert(name.lexeme.clone(), SymbolState::Pending);
         }
     }
 
     fn define(&mut self, name: String) {
         if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(name, true);
+            scope.insert(name, SymbolState::Resolved);
         }
     }
 
@@ -119,7 +131,7 @@ impl Resolver {
         match expr {
             Expr::Variable(token) => {
                 if let Some(scope) = self.scopes.last_mut() {
-                    if scope.get(&token.lexeme) == Some(&false) {
+                    if scope.get(&token.lexeme) == Some(&SymbolState::Pending) {
                         error(
                             Some(&token),
                             "Can't read local variable in its own initializer.",

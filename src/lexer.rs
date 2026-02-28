@@ -1,13 +1,18 @@
 use crate::Literal;
 use crate::tokens::{Token, TokenType};
 
+/// The Lox lexer. A thin wrapper around the Logos lexer.
 pub struct Lexer<'source> {
+    /// The Logos lexer used by this Lox lexer.
     logos_lexer: logos::Lexer<'source, TokenType>,
+    /// A reference to the source code to lex.
     source: &'source str,
+    /// The line the lexer is currently inspecting. Starts from 1.
     line: usize,
 }
 
 impl<'source> Lexer<'source> {
+    /// Create a new `Lexer`, given some source code.
     pub fn new(source: &'source str) -> Self {
         Self {
             logos_lexer: logos::Lexer::<TokenType>::new(source),
@@ -16,7 +21,7 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    pub fn next_token(&mut self) -> Option<Token> {
+    fn next_token(&mut self) -> Option<Token> {
         loop {
             let result = self.logos_lexer.next()?;
 
@@ -53,7 +58,7 @@ impl<'source> Lexer<'source> {
                 }
                 TokenType::Identifier => {
                     let val = lexeme.to_string();
-                    Some(Literal::Identifier(val))
+                    Some(Literal::String(val))
                 }
                 _ => None,
             };
