@@ -1,7 +1,8 @@
 use crate::{
-    Literal, error,
+    Literal,
     expr::{Binary, Expr, Unary},
     resolver::Resolver,
+    runtime_error,
     stmt::Stmt,
     tokens::{Token, TokenType},
 };
@@ -22,6 +23,7 @@ use value::Value;
 #[derive(Debug)]
 pub enum Signal {
     Return(Value),
+    ResolveError,
     RuntimeError(anyhow::Error),
 }
 
@@ -53,7 +55,9 @@ impl Interpreter {
 
     pub fn interpret(&mut self, stmts: Vec<Stmt>) -> InterpretResult {
         let mut resolver = Resolver::new(std::mem::take(self));
-        resolver.resolve(&stmts);
+        if resolver.resolve(&stmts).is_err() {
+            return InterpretResult::Err(Signal::ResolveError);
+        }
         *self = std::mem::take(&mut resolver.interpreter);
 
         for stmt in stmts {
@@ -119,7 +123,7 @@ impl Interpreter {
                         };
                         Some(value)
                     }
-                    None => None,
+                    None => Some(Value::Nil),
                 };
 
                 self.environment.borrow_mut().define(token.lexeme, value);
@@ -178,7 +182,7 @@ impl Interpreter {
                         Err(Signal::Return(val))
                     };
                 }
-                Err(Signal::RuntimeError(_)) => {
+                Err(Signal::ResolveError) | Err(Signal::RuntimeError(_)) => {
                     had_error = true;
                 }
             }
@@ -262,7 +266,7 @@ impl Interpreter {
             (TokenType::Minus, Value::Number(val)) => Ok(Value::Number(-val)),
             (TokenType::Minus, _) => {
                 let msg = "Operand must be a number.";
-                error(Some(&unary.operator.clone()), msg);
+                runtime_error(Some(&unary.operator.clone()), msg);
                 self.had_runtime_error = true;
                 anyhow::bail!(msg.to_string())
             }
@@ -290,7 +294,7 @@ impl Interpreter {
             (TokenType::Slash, Value::Number(left), Value::Number(right)) => match right {
                 0.0 => {
                     let msg = "Division by zero.";
-                    error(Some(&binary.operator.clone()), msg);
+                    runtime_error(Some(&binary.operator.clone()), msg);
                     self.had_runtime_error = true;
                     anyhow::bail!(msg.to_string());
                 }
@@ -320,9 +324,25 @@ impl Interpreter {
             (TokenType::BangEqual, Value::Number(left), Value::Number(right)) => {
                 Value::Bool(*left != *right)
             }
+            (TokenType::BangEqual, Value::Bool(left), Value::Bool(right)) => {
+                Value::Bool(*left != *right)
+            }
+            (TokenType::BangEqual, Value::String(left), Value::String(right)) => {
+                Value::Bool(*left != *right)
+            }
+            (TokenType::BangEqual, Value::Nil, Value::Nil) => Value::Bool(false),
+            (TokenType::BangEqual, _, _) => Value::Bool(true),
             (TokenType::EqualEqual, Value::Number(left), Value::Number(right)) => {
                 Value::Bool(*left == *right)
             }
+            (TokenType::EqualEqual, Value::Bool(left), Value::Bool(right)) => {
+                Value::Bool(*left == *right)
+            }
+            (TokenType::EqualEqual, Value::String(left), Value::String(right)) => {
+                Value::Bool(*left == *right)
+            }
+            (TokenType::EqualEqual, Value::Nil, Value::Nil) => Value::Bool(true),
+            (TokenType::EqualEqual, _, _) => Value::Bool(false),
             (
                 TokenType::Minus
                 | TokenType::Slash
@@ -330,20 +350,18 @@ impl Interpreter {
                 | TokenType::Greater
                 | TokenType::GreaterEqual
                 | TokenType::Less
-                | TokenType::LessEqual
-                | TokenType::BangEqual
-                | TokenType::EqualEqual,
+                | TokenType::LessEqual,
                 _,
                 _,
             ) => {
                 let msg = "Operands must be numbers.";
-                error(Some(&binary.operator.clone()), msg);
+                runtime_error(Some(&binary.operator.clone()), msg);
                 self.had_runtime_error = true;
                 anyhow::bail!(msg.to_string());
             }
             (TokenType::Plus, _, _) => {
-                let msg = "Operands must be numbers or strings.";
-                error(Some(&binary.operator.clone()), msg);
+                let msg = "Operands must be two numbers or two strings.";
+                runtime_error(Some(&binary.operator.clone()), msg);
                 self.had_runtime_error = true;
                 anyhow::bail!(msg.to_string())
             }
@@ -356,10 +374,7 @@ impl Interpreter {
     fn expr_stmt(&mut self, expr: Expr) -> InterpretResult {
         let value = self.expr(expr);
         match value {
-            Ok(val) => {
-                println!("{}", val.to_test_string());
-                Ok(val)
-            }
+            Ok(val) => Ok(val),
             Err(e) => Err(Signal::RuntimeError(e)),
         }
     }
@@ -385,16 +400,16 @@ impl Interpreter {
 
         if let Value::Callable(f) = callee {
             if args.len() != f.arity() {
-                let msg = format!("Expected {} arguments; got {}.", f.arity(), args.len(),);
-                error(Some(&call.paren.clone()), &msg);
+                let msg = format!("Expected {} arguments but got {}.", f.arity(), args.len(),);
+                runtime_error(Some(&call.paren.clone()), &msg);
                 self.had_runtime_error = true;
                 anyhow::bail!(msg)
             }
 
             f.call(self, &args)
         } else {
-            let msg = "Can only call functions or classes.";
-            error(Some(&call.paren.clone()), msg);
+            let msg = "Can only call functions and classes.";
+            runtime_error(Some(&call.paren.clone()), msg);
             self.had_runtime_error = true;
             anyhow::bail!(msg.to_string())
         }

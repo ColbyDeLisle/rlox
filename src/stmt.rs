@@ -1,5 +1,4 @@
 use crate::{Token, expr::Expr};
-use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {

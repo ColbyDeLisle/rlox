@@ -1,6 +1,9 @@
 use crate::Literal;
 use logos::Logos;
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
 
 /// An enum representing the possible token types in Lox.
 #[derive(Logos, Clone, Debug, PartialEq, Eq, Hash)]
@@ -50,10 +53,12 @@ pub enum TokenType {
     GreaterEqual,
 
     // Literals
-    #[regex(r#"([0-9]+)?(\.[0-9]+)|[0-9]+"#)]
+    #[regex(r#"[0-9]+(\.[0-9]+)?"#)]
     Number,
     #[regex(r#""([^"\\]|\\.)*""#)]
     String,
+    #[regex(r#""([^"\\]|\\.)*"#)]
+    UnterminatedString,
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
     Identifier,
 
@@ -96,6 +101,7 @@ pub enum TokenType {
     NewLine,
 
     Error,
+    EOF,
 }
 
 /// A Lox token.
@@ -109,6 +115,26 @@ pub struct Token {
     pub literal: Option<Literal>,
     /// The line in the source on which the token occurs.
     pub line: usize,
+    /// A unique id for each instance.
+    id: usize,
+}
+
+impl Token {
+    /// Create a new token
+    pub fn new(
+        token_type: TokenType,
+        lexeme: String,
+        literal: Option<Literal>,
+        line: usize,
+    ) -> Self {
+        Self {
+            token_type,
+            lexeme,
+            literal,
+            line,
+            id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
+        }
+    }
 }
 
 impl PartialEq for Token {
@@ -123,8 +149,6 @@ impl Eq for Token {}
 
 impl Hash for Token {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.token_type.hash(state);
-        self.lexeme.hash(state);
-        self.line.hash(state);
+        self.id.hash(state);
     }
 }

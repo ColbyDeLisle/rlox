@@ -33,10 +33,16 @@ impl PartialEq for Value {
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::Number(n) => write!(f, "{}", n),
+            Value::Number(n) => write!(
+                f,
+                "{}",
+                format!("{:.3}", n)
+                    .trim_end_matches('0')
+                    .trim_end_matches('.')
+            ),
             Value::String(s) => write!(f, "{}", s),
             Value::Bool(b) => write!(f, "{}", b),
-            Value::Nil => write!(f, "Nil"),
+            Value::Nil => write!(f, "nil"),
             Value::Callable(c) => {
                 if c.name().is_empty() {
                     write!(f, "<native fn>")

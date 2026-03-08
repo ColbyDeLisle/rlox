@@ -1,6 +1,5 @@
 use crate::Literal;
 use crate::tokens::Token;
-use std::fmt::{Display, Formatter};
 
 /// A Lox expression.
 #[derive(Debug, Clone, PartialEq)]

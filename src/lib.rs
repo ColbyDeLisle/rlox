@@ -9,13 +9,22 @@ pub mod resolver;
 pub mod stmt;
 pub mod tokens;
 
-/// Display a Lox error to the user.
-pub(crate) fn error(token: Option<&Token>, message: &str) {
+/// Display a Lox compile-time error to the user.
+pub(crate) fn compile_time_error(token: Option<&Token>, message: &str) {
     if let Some(t) = token {
-        eprintln!("{}", message);
-        eprintln!("[line {}]", t.line);
+        eprintln!("[line {}] Error at '{}': {message}", t.line, t.lexeme);
     } else {
-        eprintln!("Error: {}", message);
+        eprintln!("{}", message);
+    }
+}
+
+/// Display a Lox run-time error to the user.
+pub(crate) fn runtime_error(token: Option<&Token>, message: &str) {
+    if let Some(t) = token {
+        eprintln!("{message}");
+        eprintln!("[line {}]", t.line)
+    } else {
+        eprintln!("{}", message);
     }
 }
 

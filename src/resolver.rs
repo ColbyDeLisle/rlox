@@ -1,5 +1,5 @@
 use crate::tokens::Token;
-use crate::{error, expr::Expr, interpreter::Interpreter, stmt::Stmt};
+use crate::{compile_time_error, expr::Expr, interpreter::Interpreter, stmt::Stmt};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,68 +37,74 @@ impl Resolver {
     }
 
     /// Resolve symbols in a sequence of statements, updating the interpreter with the results.
-    pub(crate) fn resolve(&mut self, stmts: &[Stmt]) {
+    pub(crate) fn resolve(&mut self, stmts: &[Stmt]) -> anyhow::Result<()> {
         for stmt in stmts {
-            self.resolve_stmt(stmt);
+            self.resolve_stmt(stmt)?;
         }
+
+        Ok(())
     }
 
-    fn resolve_stmt(&mut self, stmt: &Stmt) {
+    fn resolve_stmt(&mut self, stmt: &Stmt) -> anyhow::Result<()> {
         match stmt {
             Stmt::Block(stmts) => {
                 self.begin_scope();
-                self.resolve(stmts);
+                self.resolve(stmts)?;
                 self.end_scope();
             }
             Stmt::Var(token, expr) => {
-                self.declare(token);
+                self.declare(token)?;
                 if let Some(initializer) = expr {
-                    self.resolve_expr(&initializer);
+                    self.resolve_expr(&initializer)?;
                 }
                 self.define(token.lexeme.clone())
             }
             Stmt::Function(token, params, body) => {
-                self.declare(token);
+                self.declare(token)?;
                 self.define(token.lexeme.clone());
 
                 let enclosing_function_type = self.current_function_type;
                 self.current_function_type = FunctionType::Function;
                 self.begin_scope();
                 for param in params {
-                    self.declare(param);
+                    self.declare(param)?;
                     self.define(param.lexeme.clone());
                 }
-                self.resolve(body);
+                self.resolve(body)?;
                 self.end_scope();
                 self.current_function_type = enclosing_function_type;
             }
             Stmt::Expression(expr) => {
-                self.resolve_expr(&expr);
+                self.resolve_expr(&expr)?;
             }
             Stmt::If(condition, if_body, else_body) => {
-                self.resolve_expr(&condition);
-                self.resolve_stmt(if_body);
+                self.resolve_expr(&condition)?;
+                self.resolve_stmt(if_body)?;
                 if let Some(stmt) = else_body {
-                    self.resolve_stmt(stmt);
+                    self.resolve_stmt(stmt)?;
                 }
             }
             Stmt::Print(expr) => {
-                self.resolve_expr(&expr);
+                self.resolve_expr(&expr)?;
             }
             Stmt::Return(keyword, expr) => {
                 if self.current_function_type == FunctionType::None {
-                    error(Some(keyword), "Can't return from top-level code.");
+                    let msg = "Can't return from top-level code.";
+                    compile_time_error(Some(keyword), msg);
+                    anyhow::bail!(msg);
                 }
 
                 if let Some(expr) = expr {
-                    self.resolve_expr(&expr);
+                    self.resolve_expr(&expr)?;
                 }
             }
             Stmt::While(condition, body) => {
-                self.resolve_expr(&condition);
-                self.resolve_stmt(body);
+                self.resolve_expr(&condition)?;
+                self.resolve_stmt(body)?;
             }
         }
+
+        Ok(())
     }
 
     fn begin_scope(&mut self) {
@@ -109,16 +115,17 @@ impl Resolver {
         self.scopes.pop()
     }
 
-    fn declare(&mut self, name: &Token) {
+    fn declare(&mut self, name: &Token) -> anyhow::Result<()> {
         if let Some(scope) = self.scopes.last_mut() {
             if let Some(_) = scope.get(&name.lexeme) {
-                error(
-                    Some(name),
-                    "Already a variable with this name in this scope.",
-                );
+                let msg = "Already a variable with this name in this scope.";
+                compile_time_error(Some(name), msg);
+                anyhow::bail!(msg);
             }
             scope.insert(name.lexeme.clone(), SymbolState::Pending);
         }
+
+        Ok(())
     }
 
     fn define(&mut self, name: String) {
@@ -127,46 +134,47 @@ impl Resolver {
         }
     }
 
-    fn resolve_expr(&mut self, expr: &Expr) {
+    fn resolve_expr(&mut self, expr: &Expr) -> anyhow::Result<()> {
         match expr {
             Expr::Variable(token) => {
                 if let Some(scope) = self.scopes.last_mut() {
                     if scope.get(&token.lexeme) == Some(&SymbolState::Pending) {
-                        error(
-                            Some(&token),
-                            "Can't read local variable in its own initializer.",
-                        );
+                        let msg = "Can't read local variable in its own initializer.";
+                        compile_time_error(Some(&token), msg);
+                        anyhow::bail!(msg);
                     }
                 }
 
                 self.resolve_local(token);
             }
             Expr::Assign(assign) => {
-                self.resolve_expr(assign.value.as_ref());
+                self.resolve_expr(assign.value.as_ref())?;
                 self.resolve_local(&assign.name)
             }
             Expr::Binary(binary) => {
-                self.resolve_expr(binary.left.as_ref());
-                self.resolve_expr(binary.right.as_ref());
+                self.resolve_expr(binary.left.as_ref())?;
+                self.resolve_expr(binary.right.as_ref())?;
             }
             Expr::Call(call) => {
-                self.resolve_expr(call.callee.as_ref());
+                self.resolve_expr(call.callee.as_ref())?;
                 for arg in &call.args {
-                    self.resolve_expr(arg);
+                    self.resolve_expr(arg)?;
                 }
             }
             Expr::Grouping(grouping) => {
-                self.resolve_expr(grouping.expression.as_ref());
+                self.resolve_expr(grouping.expression.as_ref())?;
             }
             Expr::Literal(_) => {}
             Expr::Logical(logical) => {
-                self.resolve_expr(logical.left.as_ref());
-                self.resolve_expr(logical.right.as_ref());
+                self.resolve_expr(logical.left.as_ref())?;
+                self.resolve_expr(logical.right.as_ref())?;
             }
             Expr::Unary(unary) => {
-                self.resolve_expr(unary.right.as_ref());
+                self.resolve_expr(unary.right.as_ref())?;
             }
         }
+
+        Ok(())
     }
 
     fn resolve_local(&mut self, name: &Token) {

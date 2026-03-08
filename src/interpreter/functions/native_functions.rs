@@ -8,7 +8,7 @@ pub(crate) struct Clock;
 
 impl LoxCallable for Clock {
     fn name(&self) -> String {
-        String::from("clock")
+        String::new()
     }
 
     fn arity(&self) -> usize {

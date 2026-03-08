@@ -1,5 +1,5 @@
 use crate::interpreter::value::Value;
-use crate::{Token, error};
+use crate::{Token, runtime_error};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 #[derive(Debug, Default, Clone)]
@@ -42,7 +42,7 @@ impl Environment {
                 Some(environment) => environment.borrow().get(name),
                 None => {
                     let msg = format!("Undefined variable '{}'.", &name.lexeme);
-                    error(Some(name), msg.as_str());
+                    runtime_error(Some(name), msg.as_str());
                     anyhow::bail!(msg)
                 }
             },
@@ -63,7 +63,7 @@ impl Environment {
                 "Undefined variable '{}' at distance {distance}.",
                 &name.lexeme
             );
-            error(Some(name), msg.as_str());
+            runtime_error(Some(name), msg.as_str());
             anyhow::bail!(msg)
         }
     }
@@ -78,7 +78,7 @@ impl Environment {
                 Some(environment) => environment.borrow_mut().assign(name, value),
                 None => {
                     let msg = format!("Undefined variable '{}'.", &name.lexeme);
-                    error(Some(name), msg.as_str());
+                    runtime_error(Some(name), msg.as_str());
                     anyhow::bail!(msg)
                 }
             }
@@ -100,7 +100,7 @@ impl Environment {
                 "Undefined variable '{}' at distance {distance}.",
                 &name.lexeme
             );
-            error(Some(name), msg.as_str());
+            runtime_error(Some(name), msg.as_str());
             anyhow::bail!(msg)
         }
     }

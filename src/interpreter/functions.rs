@@ -50,6 +50,7 @@ impl LoxCallable for LoxFunction {
             Ok(_) => Ok(Value::Nil),
             Err(Signal::Return(val)) => Ok(val),
             Err(Signal::RuntimeError(e)) => Err(e),
+            Err(Signal::ResolveError) => anyhow::bail!(""),
         }
     }
 }

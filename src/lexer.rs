@@ -28,12 +28,8 @@ impl<'source> Lexer<'source> {
             let tok = match result {
                 Ok(tok) => tok,
                 Err(_) => {
-                    return Some(Token {
-                        token_type: TokenType::Error,
-                        lexeme: self.source[self.logos_lexer.span()].to_string(),
-                        literal: None,
-                        line: self.line,
-                    });
+                    eprintln!("[line {}] Error: Unexpected character.", self.line);
+                    return self.next_token();
                 }
             };
 
@@ -63,12 +59,7 @@ impl<'source> Lexer<'source> {
                 _ => None,
             };
 
-            return Some(Token {
-                token_type: tok,
-                lexeme: lexeme.to_string(),
-                literal,
-                line: self.line,
-            });
+            return Some(Token::new(tok, lexeme.to_string(), literal, self.line));
         }
     }
 }
