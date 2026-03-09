@@ -80,24 +80,3 @@ fn run(source: &str) -> Result<(), ErrorKind> {
         Err(_) => Err(ErrorKind::Runtime),
     }
 }
-
-// Test using the following:
-// (replace "chap04_scanning" with "jlox" or "clox" or any other specific chapter)
-// dart run tool/bin/test.dart chap04_scanning --interpreter ~/Documents/rlox/target/release/rlox
-
-// TEST TODOs:
-// * address float parsing without preceding digit (e.g. '.123')
-// * Print expr stmts; per chatGPT:
-// Inside your expression-statement execution:
-//
-// fn execute_expression_stmt(&self, expr: &Expr) -> Result<(), LoxError> {
-//     let value = self.evaluate(expr)?;
-//     println!("{}", value.to_test_string());
-//     Ok(())
-// }
-//
-// The test suite expects all evaluated top-level expressions to print in this exact format.
-//
-// Statements like print or var already handle their own output.
-//
-// But bare literals (like 123) need this explicit printing.
