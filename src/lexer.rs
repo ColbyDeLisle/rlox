@@ -1,13 +1,18 @@
 use crate::Literal;
 use crate::tokens::{Token, TokenType};
 
+/// The Lox lexer. A thin wrapper around the Logos lexer.
 pub struct Lexer<'source> {
+    /// The Logos lexer used by this Lox lexer.
     logos_lexer: logos::Lexer<'source, TokenType>,
+    /// A reference to the source code to lex.
     source: &'source str,
+    /// The line the lexer is currently inspecting. Starts from 1.
     line: usize,
 }
 
 impl<'source> Lexer<'source> {
+    /// Create a new `Lexer`, given some source code.
     pub fn new(source: &'source str) -> Self {
         Self {
             logos_lexer: logos::Lexer::<TokenType>::new(source),
@@ -16,19 +21,15 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    pub fn next_token(&mut self) -> Option<Token> {
+    fn next_token(&mut self) -> Option<Token> {
         loop {
             let result = self.logos_lexer.next()?;
 
             let tok = match result {
                 Ok(tok) => tok,
                 Err(_) => {
-                    return Some(Token {
-                        token_type: TokenType::Error,
-                        lexeme: self.source[self.logos_lexer.span()].to_string(),
-                        literal: None,
-                        line: self.line,
-                    });
+                    eprintln!("[line {}] Error: Unexpected character.", self.line);
+                    return self.next_token();
                 }
             };
 
@@ -53,17 +54,12 @@ impl<'source> Lexer<'source> {
                 }
                 TokenType::Identifier => {
                     let val = lexeme.to_string();
-                    Some(Literal::Identifier(val))
+                    Some(Literal::String(val))
                 }
                 _ => None,
             };
 
-            return Some(Token {
-                token_type: tok,
-                lexeme: lexeme.to_string(),
-                literal,
-                line: self.line,
-            });
+            return Some(Token::new(tok, lexeme.to_string(), literal, self.line));
         }
     }
 }

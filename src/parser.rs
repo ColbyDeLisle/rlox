@@ -1,6 +1,6 @@
 use crate::expr::Logical;
 use crate::{
-    Literal, error,
+    Literal, compile_time_error,
     expr::{Assign, Binary, Call, Expr, Grouping, Unary},
     lexer::Lexer,
     stmt::Stmt,
@@ -9,13 +9,8 @@ use crate::{
 use std::fmt::{Display, Formatter};
 use std::iter::Peekable;
 
-pub struct Parser<'source> {
-    tokens: Peekable<Lexer<'source>>,
-    previous: Token,
-    had_error: bool,
-}
-
-pub(crate) enum FunctionKind {
+#[derive(Debug)]
+enum FunctionKind {
     Function,
     #[allow(dead_code)]
     Method,
@@ -30,60 +25,68 @@ impl Display for FunctionKind {
     }
 }
 
+/// The Lox parser.
+pub struct Parser<'source> {
+    /// The stream of tokens used to parse, coming dynamically from the provided lexer.
+    tokens: Peekable<Lexer<'source>>,
+    /// The previously processed `Token`.
+    previous: Token,
+    /// Whether the parser has so far encountered an error.
+    had_error: bool,
+}
+
 impl<'source> Parser<'source> {
-    pub fn new(lexer: Lexer<'source>) -> Option<Self> {
-        let mut tokens = lexer.peekable();
+    /// Create a new `Parser`, provided a `Lexer`.
+    pub fn new(lexer: Lexer<'source>) -> Self {
+        let tokens = lexer.peekable();
         let had_error = false;
 
         // There is no previous token at the very beginning.
         // We use an Error as a placeholder, but it should never show up anywhere!
-        let previous = Token {
-            token_type: Error,
-            lexeme: "PRE-TOKEN".to_string(),
-            literal: None,
-            line: 0,
-        };
+        let previous = Token::new(Error, "PRE-TOKEN".to_string(), None, 0);
 
-        match tokens.peek() {
-            Some(_) => Some(Parser {
-                tokens,
-                previous,
-                had_error,
-            }),
-            None => {
-                error(None, "Cannot create Lexer; no tokens!");
-                None
-            }
+        Parser {
+            tokens,
+            previous,
+            had_error,
         }
     }
 
+    /// Parse the provided source code into a sequence of statements.
     pub fn parse(&mut self) -> anyhow::Result<Vec<Stmt>> {
         let mut stmts: Vec<Stmt> = vec![];
 
         while self.tokens.peek().is_some() {
-            stmts.push(self.decl()?);
+            if let Some(stmt) = self.decl() {
+                stmts.push(stmt);
+            }
+        }
+
+        if self.had_error {
+            anyhow::bail!("");
         }
 
         Ok(stmts)
     }
 
-    pub(crate) fn decl(&mut self) -> anyhow::Result<Stmt> {
+    fn decl(&mut self) -> Option<Stmt> {
         let stmt: anyhow::Result<Stmt> = if self.matches(&[Var]) {
-            self.decl_stmt()
+            self.var_decl()
         } else if self.matches(&[Fun]) {
-            self.function_decl_stmt(FunctionKind::Function)
+            self.fun_decl(FunctionKind::Function)
         } else {
             self.stmt()
         };
 
-        if stmt.is_err() {
+        if let Ok(stmt) = stmt {
+            Some(stmt)
+        } else {
             self.synchronize();
+            None
         }
-
-        stmt
     }
 
-    fn decl_stmt(&mut self) -> anyhow::Result<Stmt> {
+    fn var_decl(&mut self) -> anyhow::Result<Stmt> {
         self.consume(Identifier, "Expect variable name.")?;
         let name = self.previous.clone();
 
@@ -97,7 +100,7 @@ impl<'source> Parser<'source> {
         Ok(Stmt::Var(name, initializer))
     }
 
-    fn function_decl_stmt(&mut self, kind: FunctionKind) -> anyhow::Result<Stmt> {
+    fn fun_decl(&mut self, kind: FunctionKind) -> anyhow::Result<Stmt> {
         self.consume(Identifier, &format!("Expect {kind} name."))?;
         let name = self.previous.clone();
 
@@ -108,15 +111,18 @@ impl<'source> Parser<'source> {
             params.push(self.previous.clone());
 
             while self.matches(&[Comma]) {
+                self.consume(Identifier, "Expect parameter name.")?;
+
                 if params.len() >= 255 {
-                    self.error("Can't have more than 255 parameters.");
+                    let msg = "Can't have more than 255 parameters.";
+                    self.error(msg);
+                    anyhow::bail!(msg.to_string());
                 }
 
-                self.consume(Identifier, "Expect parameter name.")?;
                 params.push(self.previous.clone());
             }
         }
-        self.consume(RightParen, &format!("Expect ')' after {kind} parameters."))?;
+        self.consume(RightParen, "Expect ')' after parameters.")?;
 
         self.consume(LeftBrace, &format!("Expect '{{' before {kind} body."))?;
         // n.b., we consume the LeftBrace *before* calling block
@@ -130,7 +136,7 @@ impl<'source> Parser<'source> {
         Ok(Stmt::Function(name, params, stmts))
     }
 
-    pub fn stmt(&mut self) -> anyhow::Result<Stmt> {
+    fn stmt(&mut self) -> anyhow::Result<Stmt> {
         if self.matches(&[If]) {
             self.if_stmt()
         } else if self.matches(&[While]) {
@@ -178,7 +184,7 @@ impl<'source> Parser<'source> {
         let initializer = if self.matches(&[Semicolon]) {
             None
         } else if self.matches(&[Var]) {
-            Some(self.decl_stmt()?)
+            Some(self.var_decl()?)
         } else {
             Some(self.expr_stmt()?)
         };
@@ -220,7 +226,9 @@ impl<'source> Parser<'source> {
         let mut statements: Vec<Stmt> = vec![];
 
         while !self.check(&RightBrace) & self.tokens.peek().is_some() {
-            statements.push(self.decl()?);
+            if let Some(stmt) = self.decl() {
+                statements.push(stmt);
+            }
         }
         self.consume(RightBrace, "Expect '}' after block.")?;
 
@@ -242,7 +250,12 @@ impl<'source> Parser<'source> {
     }
 
     fn error(&mut self, message: &str) {
-        error(Some(&self.previous), message);
+        compile_time_error(Some(&self.previous), message);
+        self.had_error = true;
+    }
+
+    fn handle_unterminated_string(&mut self, message: &str) {
+        eprintln!("[line {}] Error: {message}", &self.previous.line);
         self.had_error = true;
     }
 
@@ -278,17 +291,17 @@ impl<'source> Parser<'source> {
         let l_expr = self.logical_or()?;
 
         if self.matches(&[Equal]) {
-            let value = self.assignment()?;
-
             match l_expr {
                 Expr::Variable(token) => {
                     return Ok(Expr::Assign(Assign {
                         name: token,
-                        value: Box::new(value),
+                        value: Box::new(self.assignment()?),
                     }));
                 }
                 _ => {
-                    self.error("Invalid assignment target.");
+                    let msg = "Invalid assignment target.";
+                    self.error(msg);
+                    anyhow::bail!(msg);
                 }
             }
         }
@@ -425,14 +438,16 @@ impl<'source> Parser<'source> {
         if !self.check(&RightParen) {
             args.push(self.expr()?);
             while self.matches(&[Comma]) {
-                if args.len() > 255 {
-                    self.error("Functions may not have more than 255 arguments.");
-                }
                 args.push(self.expr()?);
+                if args.len() > 255 {
+                    let msg = "Can't have more than 255 arguments.";
+                    self.error(msg);
+                    anyhow::bail!(msg);
+                }
             }
         }
 
-        self.consume(RightParen, "Expect ')' after args.")?;
+        self.consume(RightParen, "Expect ')' after arguments.")?;
 
         Ok(Expr::Call(Call {
             callee: Box::new(callee),
@@ -458,10 +473,10 @@ impl<'source> Parser<'source> {
         if self.tokens.peek().is_none() {
             let msg = "Unexpected EOF.";
             self.error(msg);
-            anyhow::bail!(msg.to_string());
+            anyhow::bail!(msg);
         }
 
-        // consume the literal, putting it into self.current
+        // consume the literal
         self.advance();
 
         let p = match &self.previous.token_type {
@@ -479,9 +494,14 @@ impl<'source> Parser<'source> {
                     expression: Box::new(expr),
                 }));
             }
-            other => {
-                let msg = format!("Unexpected token type: {:?}", &other);
-                self.error(msg.as_str());
+            UnterminatedString => {
+                let msg = "Unterminated string.";
+                self.handle_unterminated_string(msg);
+                anyhow::bail!(msg);
+            }
+            _ => {
+                let msg = "Expect expression.";
+                self.error(msg);
                 anyhow::bail!(msg);
             }
         };
@@ -494,6 +514,7 @@ impl<'source> Parser<'source> {
             self.advance();
             Ok(true)
         } else {
+            self.advance();
             self.error(message);
             anyhow::bail!(message.to_string());
         }
@@ -765,7 +786,7 @@ mod tests {
             Token {
                 token_type: TokenType::Identifier,
                 lexeme: String::from("i"),
-                literal: Some(Literal::Identifier(String::from("i"))),
+                literal: Some(Literal::String(String::from("i"))),
                 line,
             }
         }

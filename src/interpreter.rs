@@ -1,109 +1,33 @@
 use crate::{
-    Literal, error,
+    Literal,
     expr::{Binary, Expr, Unary},
     resolver::Resolver,
+    runtime_error,
     stmt::Stmt,
     tokens::{Token, TokenType},
 };
 use std::collections::HashMap;
-use std::{
-    cell::RefCell,
-    fmt::{Debug, Display, Formatter},
-    rc::Rc,
-    result::Result,
-};
+use std::{cell::RefCell, fmt::Debug, rc::Rc, result::Result};
 
 pub(crate) mod environment;
 use environment::Environment;
-mod native_functions;
-use native_functions::Clock;
+
+mod functions;
+use functions::{Clock, LoxFunction};
+
+mod value;
 
 use crate::expr::{Assign, Call, Logical};
-
-#[derive(Debug, Clone)]
-pub enum Value {
-    Number(f32),
-    String(String),
-    Bool(bool),
-    Callable(Rc<dyn LoxCallable>),
-    Nil,
-}
-
-impl PartialEq for Value {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Value::Number(a), Value::Number(b)) => *a == *b,
-            (Value::String(a), Value::String(b)) => *a == *b,
-            (Value::Bool(a), Value::Bool(b)) => *a == *b,
-            (Value::Nil, Value::Nil) => true,
-            (Value::Callable(f), Value::Callable(g)) => f.name() == g.name(),
-            _ => false,
-        }
-    }
-}
-
-impl Display for Value {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Value::Number(val) => write!(f, "{}", val),
-            Value::String(val) => write!(f, "{}", val),
-            Value::Bool(val) => write!(f, "{}", val),
-            Value::Callable(val) => write!(f, "<fun {}>", val.name()),
-            Value::Nil => write!(f, "Nil"),
-        }
-    }
-}
+use value::Value;
 
 #[derive(Debug)]
 pub enum Signal {
     Return(Value),
+    ResolveError,
     RuntimeError(anyhow::Error),
 }
 
 pub type InterpretResult = Result<Value, Signal>;
-
-pub trait LoxCallable: Debug {
-    fn name(&self) -> String;
-    fn arity(&self) -> usize;
-    fn call(&self, interpreter: &mut Interpreter, args: &[Value]) -> anyhow::Result<Value>;
-}
-
-#[derive(Debug)]
-pub(crate) struct LoxFunction {
-    name: String,
-    params: Vec<String>,
-    body: Vec<Stmt>,
-    closure: Rc<RefCell<Environment>>,
-}
-
-impl LoxCallable for LoxFunction {
-    fn name(&self) -> String {
-        self.name.clone()
-    }
-
-    fn arity(&self) -> usize {
-        self.params.len()
-    }
-
-    fn call(&self, interpreter: &mut Interpreter, args: &[Value]) -> anyhow::Result<Value> {
-        let env = Rc::new(RefCell::new(Environment::new_with_enclosing(Some(
-            self.closure.clone(),
-        ))));
-
-        for i in 0..self.params.len() {
-            env.borrow_mut()
-                .define(self.params[i].clone(), Some(args[i].clone()));
-        }
-
-        let body_result = interpreter.execute_block_with_env(self.body.clone(), env);
-        match body_result {
-            // n.b. we return Nil from a successful function call w/o an explicit `return`
-            Ok(_) => Ok(Value::Nil),
-            Err(Signal::Return(val)) => Ok(val),
-            Err(Signal::RuntimeError(e)) => Err(e),
-        }
-    }
-}
 
 #[derive(Debug, Default)]
 pub struct Interpreter {
@@ -131,7 +55,9 @@ impl Interpreter {
 
     pub fn interpret(&mut self, stmts: Vec<Stmt>) -> InterpretResult {
         let mut resolver = Resolver::new(std::mem::take(self));
-        resolver.resolve(&stmts);
+        if resolver.resolve(&stmts).is_err() {
+            return InterpretResult::Err(Signal::ResolveError);
+        }
         *self = std::mem::take(&mut resolver.interpreter);
 
         for stmt in stmts {
@@ -197,7 +123,7 @@ impl Interpreter {
                         };
                         Some(value)
                     }
-                    None => None,
+                    None => Some(Value::Nil),
                 };
 
                 self.environment.borrow_mut().define(token.lexeme, value);
@@ -233,7 +159,7 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn execute_block_with_env(
+    fn execute_block_with_env(
         &mut self,
         stmts: Vec<Stmt>,
         env: Rc<RefCell<Environment>>,
@@ -256,7 +182,7 @@ impl Interpreter {
                         Err(Signal::Return(val))
                     };
                 }
-                Err(Signal::RuntimeError(_)) => {
+                Err(Signal::ResolveError) | Err(Signal::RuntimeError(_)) => {
                     had_error = true;
                 }
             }
@@ -309,9 +235,7 @@ impl Interpreter {
             Literal::String(val) => Value::String(val),
             Literal::Bool(val) => Value::Bool(val),
             Literal::Nil => Value::Nil,
-            Literal::Identifier(_) => todo!(), // assuming this will be done later
         };
-
         Ok(value)
     }
 
@@ -342,7 +266,7 @@ impl Interpreter {
             (TokenType::Minus, Value::Number(val)) => Ok(Value::Number(-val)),
             (TokenType::Minus, _) => {
                 let msg = "Operand must be a number.";
-                error(Some(&unary.operator.clone()), msg);
+                runtime_error(Some(&unary.operator.clone()), msg);
                 self.had_runtime_error = true;
                 anyhow::bail!(msg.to_string())
             }
@@ -367,9 +291,15 @@ impl Interpreter {
             (TokenType::Minus, Value::Number(left), Value::Number(right)) => {
                 Value::Number(left - right)
             }
-            (TokenType::Slash, Value::Number(left), Value::Number(right)) => {
-                Value::Number(left / right)
-            }
+            (TokenType::Slash, Value::Number(left), Value::Number(right)) => match right {
+                0.0 => {
+                    let msg = "Division by zero.";
+                    runtime_error(Some(&binary.operator.clone()), msg);
+                    self.had_runtime_error = true;
+                    anyhow::bail!(msg.to_string());
+                }
+                _ => Value::Number(left / right),
+            },
             (TokenType::Star, Value::Number(left), Value::Number(right)) => {
                 Value::Number(left * right)
             }
@@ -394,9 +324,25 @@ impl Interpreter {
             (TokenType::BangEqual, Value::Number(left), Value::Number(right)) => {
                 Value::Bool(*left != *right)
             }
+            (TokenType::BangEqual, Value::Bool(left), Value::Bool(right)) => {
+                Value::Bool(*left != *right)
+            }
+            (TokenType::BangEqual, Value::String(left), Value::String(right)) => {
+                Value::Bool(*left != *right)
+            }
+            (TokenType::BangEqual, Value::Nil, Value::Nil) => Value::Bool(false),
+            (TokenType::BangEqual, _, _) => Value::Bool(true),
             (TokenType::EqualEqual, Value::Number(left), Value::Number(right)) => {
                 Value::Bool(*left == *right)
             }
+            (TokenType::EqualEqual, Value::Bool(left), Value::Bool(right)) => {
+                Value::Bool(*left == *right)
+            }
+            (TokenType::EqualEqual, Value::String(left), Value::String(right)) => {
+                Value::Bool(*left == *right)
+            }
+            (TokenType::EqualEqual, Value::Nil, Value::Nil) => Value::Bool(true),
+            (TokenType::EqualEqual, _, _) => Value::Bool(false),
             (
                 TokenType::Minus
                 | TokenType::Slash
@@ -404,20 +350,18 @@ impl Interpreter {
                 | TokenType::Greater
                 | TokenType::GreaterEqual
                 | TokenType::Less
-                | TokenType::LessEqual
-                | TokenType::BangEqual
-                | TokenType::EqualEqual,
+                | TokenType::LessEqual,
                 _,
                 _,
             ) => {
                 let msg = "Operands must be numbers.";
-                error(Some(&binary.operator.clone()), msg);
+                runtime_error(Some(&binary.operator.clone()), msg);
                 self.had_runtime_error = true;
                 anyhow::bail!(msg.to_string());
             }
             (TokenType::Plus, _, _) => {
-                let msg = "Operands must be numbers or strings.";
-                error(Some(&binary.operator.clone()), msg);
+                let msg = "Operands must be two numbers or two strings.";
+                runtime_error(Some(&binary.operator.clone()), msg);
                 self.had_runtime_error = true;
                 anyhow::bail!(msg.to_string())
             }
@@ -456,16 +400,16 @@ impl Interpreter {
 
         if let Value::Callable(f) = callee {
             if args.len() != f.arity() {
-                let msg = format!("Expected {} arguments; got {}.", f.arity(), args.len(),);
-                error(Some(&call.paren.clone()), &msg);
+                let msg = format!("Expected {} arguments but got {}.", f.arity(), args.len(),);
+                runtime_error(Some(&call.paren.clone()), &msg);
                 self.had_runtime_error = true;
                 anyhow::bail!(msg)
             }
 
             f.call(self, &args)
         } else {
-            let msg = "Can only call functions or classes.";
-            error(Some(&call.paren.clone()), msg);
+            let msg = "Can only call functions and classes.";
+            runtime_error(Some(&call.paren.clone()), msg);
             self.had_runtime_error = true;
             anyhow::bail!(msg.to_string())
         }
@@ -486,12 +430,8 @@ impl Interpreter {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        Literal,
-        interpreter::{Interpreter, Value},
-        lexer::Lexer,
-        parser::Parser,
-    };
+    use crate::interpreter::value::Value;
+    use crate::{Literal, interpreter::Interpreter, lexer::Lexer, parser::Parser};
 
     #[test]
     fn test_interpret_literal() {

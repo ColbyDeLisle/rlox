@@ -1,2 +1,4 @@
 /.idea
 /target
+/tests/craftinginterpreters/tool/.dart_tool
+.DS_store

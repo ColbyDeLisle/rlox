@@ -8,13 +8,35 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build_and_test:
-
+  test:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Lint
+        run: cargo check
+
+      - name: Lint (Clippy)
+        run: cargo clippy
+
+#      # Install Dart (Linux)
+#      - name: Install Dart 2.19
+#        run: |
+#          sudo apt-get update
+#          sudo apt-get install -y apt-transport-https
+#          sudo sh -c 'wget -qO- https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add -'
+#          sudo sh -c 'wget -qO- https://storage.googleapis.com/download.dartlang.org/linux/debian/dart_stable.list > /etc/apt/sources.list.d/dart_stable.list'
+#          sudo apt-get update
+#          sudo apt-get install -y dart=2.19.*
+#
+#      - name: Get Dart dependencies
+#        working-directory: tests/craftinginterpreters/tool
+#        run: dart pub get
+#
+#      - name: Test jlox
+#        working-directory: tests/craftinginterpreters
+#        run: dart run tool/bin/test.dart jlox --interpreter $GITHUB_WORKSPACE/target/release/rlox

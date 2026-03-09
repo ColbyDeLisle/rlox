@@ -1,157 +1,82 @@
-use rlox::interpreter::Interpreter;
+use rlox::interpreter::{Interpreter, Signal};
 use rlox::lexer::Lexer;
 use rlox::parser::Parser;
+use std::env;
+use std::fs;
+use std::io::{self, Write};
+use std::process;
 
+#[derive(Debug)]
+enum ErrorKind {
+    Compile,
+    Runtime,
+}
 fn main() {
-    // Some test cases:
+    let mut args = env::args();
+    let _program = args.next(); // skip program name
 
-    // let source = r#"
-    //     var x = 42;
-    //
-    //     var y = true;
-    //     print "Hello,
-    //     world!";
-    //     var z = % false;
-    // "#;
+    match (args.next(), args.next()) {
+        (None, _) => {
+            // No arguments → REPL
+            run_repl();
+        }
+        (Some(path), None) => {
+            // One argument → run file
+            run_file(path.as_str());
+        }
+        _ => {
+            eprintln!("Usage: rlox [script]");
+            process::exit(64);
+        }
+    }
+}
 
-    // let source = r#"
-    //     6 * ((1 + 2) / (3 + (4)))
-    // "#;
+fn run_file(path: &str) {
+    let source = fs::read_to_string(path).unwrap_or_else(|err| {
+        eprintln!("Could not read file: {err}");
+        process::exit(74);
+    });
 
-    // let source = r#"
-    //     1 + 2
-    // "#;
+    match run(source.as_str()) {
+        Ok(_) => {}
+        Err(ErrorKind::Compile) => process::exit(65),
+        Err(ErrorKind::Runtime) => process::exit(70),
+    }
+}
 
-    // let source = r#"
-    //     (1 + 2) == ((2 * 2) + 5) / 3.0
-    // "#;
+fn run_repl() {
+    let stdin = io::stdin();
+    let mut line = String::new();
 
-    // let source = r#"
-    // "#;
+    loop {
+        print!("> ");
+        io::stdout().flush().unwrap();
 
-    // let source = r#"
-    // 2 * false
-    // "#;
-
-    // let source = r#"
-    //     print "one";
-    //     print !true;
-    //     print 2 + 1;
-    //
-    //     var a = 1;
-    //     var b = 12;
-    //     print a + b;
-    //
-    //     var c;
-    //     print c = "hello";
-    // "#;
-
-    // let source = r#"
-    //     var a = "global a";
-    //     var b = "global b";
-    //     var c = "global c";
-    //     {
-    //       var a = "outer a";
-    //       var b = "outer b";
-    //       {
-    //         var a = "inner a";
-    //         print a;
-    //         print b;
-    //         print c;
-    //       }
-    //
-    //       {
-    //         var a = "other inner a";
-    //         print a;
-    //       }
-    //
-    //       print a;
-    //       print b;
-    //       print c;
-    //     }
-    //     print a;
-    //     print b;
-    //     print c;
-    //
-    //     print "hi" or 2;
-    //     print nil or "yes";
-    //     print nil and "maybe";
-    //     print "possibly" and "maybe";
-    //
-    //     var i = 0;
-    //     while (i < 10) {
-    //         print i;
-    //         i = i + 1;
-    //     }
-    //
-    // "#;
-
-    // let source = r#"
-    //     var a = 0;
-    //     var temp;
-    //
-    //     for (var b = 1; a < 10000; b = temp + b) {
-    //       print a;
-    //       temp = a;
-    //       a = b;
-    //     }
-    //
-    //     fun sayHi(first, last) {
-    //       print "Hi, " + first + " " + last + "!";
-    //     }
-    //
-    //     sayHi("Dear", "Reader");
-    //
-    //     print(clock() / (60.0 * 60.0 * 24.0 * 365.0));
-    //
-    //     print(sayHi);
-    // "#;
-
-    // let source = r#"
-    //     fun fib(n) {
-    //       if (n <= 1) return n;
-    //       return fib(n - 2) + fib(n - 1);
-    //     }
-    //
-    //     for (var i = 0; i < 20; i = i + 1) {
-    //       print fib(i);
-    //     }
-    // "#;
-
-    let source = r#"
-        fun makeCounter() {
-            var i = 0;
-
-            fun count() {
-                i = i + 1;
-                print i;
-            }
-
-            return count;
+        line.clear();
+        if stdin.read_line(&mut line).unwrap() == 0 {
+            break; // EOF (Ctrl+D)
         }
 
-        var counter = makeCounter();
-        counter(); // "1".
-        counter(); // "2".
-    "#;
+        if let Err(err) = run(line.as_str()) {
+            match err {
+                ErrorKind::Compile => eprintln!("Compile error."),
+                ErrorKind::Runtime => eprintln!("Runtime error."),
+            }
+        }
+    }
+}
 
-    // let source = r#"
-    //     var a = "global";
-    //     {
-    //       fun showA() {
-    //         print a;
-    //       }
-    //
-    //       showA();
-    //       var a = "block";
-    //       showA();
-    //     }
-    // "#;
-
+fn run(source: &str) -> Result<(), ErrorKind> {
     let lexer = Lexer::new(source);
-    let mut parser = Parser::new(lexer).unwrap();
-    let mut interpreter = Interpreter::new();
-    let stmts = parser.parse().unwrap();
+    let mut parser = Parser::new(lexer);
 
-    assert!(interpreter.interpret(stmts).is_ok());
+    let Ok(stmts) = parser.parse() else {
+        return Err(ErrorKind::Compile);
+    };
+
+    match Interpreter::new().interpret(stmts) {
+        Ok(_) => Ok(()),
+        Err(Signal::ResolveError) => Err(ErrorKind::Compile),
+        Err(_) => Err(ErrorKind::Runtime),
+    }
 }

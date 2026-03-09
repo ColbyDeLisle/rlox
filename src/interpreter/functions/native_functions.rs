@@ -1,11 +1,14 @@
-use super::{Interpreter, LoxCallable, Value};
+use super::Interpreter;
+use crate::interpreter::functions::LoxCallable;
+use crate::interpreter::value::Value;
 
+/// Lox's native `clock` function.
 #[derive(Debug)]
 pub(crate) struct Clock;
 
 impl LoxCallable for Clock {
     fn name(&self) -> String {
-        String::from("clock")
+        String::new()
     }
 
     fn arity(&self) -> usize {
