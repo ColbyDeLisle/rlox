@@ -52,6 +52,10 @@ impl Resolver {
                 self.resolve(stmts)?;
                 self.end_scope();
             }
+            Stmt::Class(name, methods) => {
+                self.declare(name)?;
+                self.define(name.lexeme.clone());
+            }
             Stmt::Var(token, expr) => {
                 self.declare(token)?;
                 if let Some(initializer) = expr {
@@ -160,6 +164,9 @@ impl Resolver {
                 for arg in &call.args {
                     self.resolve_expr(arg)?;
                 }
+            }
+            Expr::Get(get) => {
+                self.resolve_expr(get.expr.as_ref())?;
             }
             Expr::Grouping(grouping) => {
                 self.resolve_expr(grouping.expression.as_ref())?;

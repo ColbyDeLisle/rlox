@@ -1,6 +1,6 @@
 use crate::{
     Literal,
-    expr::{Binary, Expr, Unary},
+    expr::{Assign, Call, Logical, Binary, Expr, Unary},
     resolver::Resolver,
     runtime_error,
     stmt::Stmt,
@@ -13,12 +13,14 @@ pub(crate) mod environment;
 use environment::Environment;
 
 mod functions;
-use functions::{Clock, LoxFunction};
+use functions::{Clock, LoxFunction, LoxCallable};
 
 mod value;
-
-use crate::expr::{Assign, Call, Logical};
 use value::Value;
+
+mod class;
+use class::Class;
+use crate::expr::Get;
 
 #[derive(Debug)]
 pub enum Signal {
@@ -112,6 +114,13 @@ impl Interpreter {
                 let new_env = Environment::new_with_enclosing(Some(self.environment.clone()));
                 self.execute_block_with_env(stmts, Rc::new(RefCell::new(new_env)))
             }
+            Stmt::Class(name, methods) => {
+                self.environment.borrow_mut().define(name.lexeme.clone(), None);
+                let class = Rc::new(Class::new(name.lexeme.clone()));
+                self.environment.borrow_mut().assign(&name, Value::Class(class));
+
+                Ok(Value::Nil)
+            }
             Stmt::Var(token, expr) => {
                 let value = match expr {
                     Some(expr) => {
@@ -202,6 +211,7 @@ impl Interpreter {
             Expr::Assign(assign) => self.assign(assign),
             Expr::Binary(binary) => self.binary(binary),
             Expr::Call(call) => self.call(call),
+            Expr::Get(get) => self.get(get),
             Expr::Grouping(grouping) => self.expr(*grouping.expression),
             Expr::Literal(literal) => self.literal(literal),
             Expr::Logical(logical) => self.logical(logical),
@@ -398,7 +408,17 @@ impl Interpreter {
             args.push(self.expr(arg)?);
         }
 
+        // TODO: fix duplication here?
         if let Value::Callable(f) = callee {
+            if args.len() != f.arity() {
+                let msg = format!("Expected {} arguments but got {}.", f.arity(), args.len(),);
+                runtime_error(Some(&call.paren.clone()), &msg);
+                self.had_runtime_error = true;
+                anyhow::bail!(msg)
+            }
+
+            f.call(self, &args)
+        } else if let Value::Class(f) = callee {
             if args.len() != f.arity() {
                 let msg = format!("Expected {} arguments but got {}.", f.arity(), args.len(),);
                 runtime_error(Some(&call.paren.clone()), &msg);
@@ -412,6 +432,32 @@ impl Interpreter {
             runtime_error(Some(&call.paren.clone()), msg);
             self.had_runtime_error = true;
             anyhow::bail!(msg.to_string())
+        }
+    }
+
+    fn get(&mut self, get: Get) -> anyhow::Result<Value> {
+        let name = get.name.clone();
+        let object = self.expr(*get.expr)?;
+
+        match object {
+            Value::Instance(i) => {
+                let value = i.borrow().get(&name);
+                match value {
+                    Some(value) => Ok(value),
+                    None => {
+                        let msg = format!("Undefined property '{}'.", name.lexeme);
+                        runtime_error(Some(&name.clone()), &msg);
+                        self.had_runtime_error = true;
+                        anyhow::bail!(msg)
+                    }
+                }
+            }
+            _ => {
+                let msg = "Only instances have properties.";
+                runtime_error(Some(&name.clone()), msg);
+                self.had_runtime_error = true;
+                anyhow::bail!(msg.to_string())
+            }
         }
     }
 

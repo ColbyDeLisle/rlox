@@ -1,4 +1,4 @@
-use crate::expr::Logical;
+use crate::expr::{Get, Logical};
 use crate::{
     Literal, compile_time_error,
     expr::{Assign, Binary, Call, Expr, Grouping, Unary},
@@ -70,10 +70,12 @@ impl<'source> Parser<'source> {
     }
 
     fn decl(&mut self) -> Option<Stmt> {
-        let stmt: anyhow::Result<Stmt> = if self.matches(&[Var]) {
-            self.var_decl()
+        let stmt: anyhow::Result<Stmt> = if self.matches(&[Class]) {
+            self.class_decl()
         } else if self.matches(&[Fun]) {
             self.fun_decl(FunctionKind::Function)
+        } else if self.matches(&[Var]) {
+            self.var_decl()
         } else {
             self.stmt()
         };
@@ -86,18 +88,18 @@ impl<'source> Parser<'source> {
         }
     }
 
-    fn var_decl(&mut self) -> anyhow::Result<Stmt> {
-        self.consume(Identifier, "Expect variable name.")?;
+    fn class_decl(&mut self) -> anyhow::Result<Stmt> {
+        self.consume(Identifier, "Expect class name.")?;
         let name = self.previous.clone();
 
-        let mut initializer: Option<Expr> = None;
-        if self.matches(&[Equal]) {
-            initializer = Some(self.expr()?);
+        self.consume(LeftBrace, "Expect '{' before class body.")?;
+        let mut methods: Vec<Stmt> = vec![];
+        while !self.check(&RightBrace) {
+            methods.push(self.fun_decl(FunctionKind::Method)?);
         }
+        self.consume(RightBrace, "Expect '}' after class body.")?;
 
-        self.consume(Semicolon, "Expect ';' after variable declaration.")?;
-
-        Ok(Stmt::Var(name, initializer))
+        Ok(Stmt::Class(name, methods))
     }
 
     fn fun_decl(&mut self, kind: FunctionKind) -> anyhow::Result<Stmt> {
@@ -134,6 +136,20 @@ impl<'source> Parser<'source> {
         };
 
         Ok(Stmt::Function(name, params, stmts))
+    }
+
+    fn var_decl(&mut self) -> anyhow::Result<Stmt> {
+        self.consume(Identifier, "Expect variable name.")?;
+        let name = self.previous.clone();
+
+        let mut initializer: Option<Expr> = None;
+        if self.matches(&[Equal]) {
+            initializer = Some(self.expr()?);
+        }
+
+        self.consume(Semicolon, "Expect ';' after variable declaration.")?;
+
+        Ok(Stmt::Var(name, initializer))
     }
 
     fn stmt(&mut self) -> anyhow::Result<Stmt> {
@@ -424,6 +440,13 @@ impl<'source> Parser<'source> {
         loop {
             if self.matches(&[LeftParen]) {
                 expr = self.finish_call(expr.clone())?;
+            } else if self.matches(&[Dot]) {
+                self.consume(Identifier, "Expect property name after '.'.")?;
+                let name = self.previous.clone();
+                expr = Expr::Get(Get {
+                    expr: Box::new(expr),
+                    name,
+                })
             } else {
                 break;
             }
