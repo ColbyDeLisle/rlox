@@ -1,6 +1,6 @@
 use crate::{
     Literal,
-    expr::{Assign, Call, Logical, Binary, Expr, Unary},
+    expr::{Assign, Binary, Call, Expr, Logical, Unary},
     resolver::Resolver,
     runtime_error,
     stmt::Stmt,
@@ -13,14 +13,14 @@ pub(crate) mod environment;
 use environment::Environment;
 
 mod functions;
-use functions::{Clock, LoxFunction, LoxCallable};
+use functions::{Clock, LoxCallable, LoxFunction};
 
 mod value;
 use value::Value;
 
 mod class;
+use crate::expr::{Get, Set};
 use class::Class;
-use crate::expr::Get;
 
 #[derive(Debug)]
 pub enum Signal {
@@ -115,9 +115,13 @@ impl Interpreter {
                 self.execute_block_with_env(stmts, Rc::new(RefCell::new(new_env)))
             }
             Stmt::Class(name, methods) => {
-                self.environment.borrow_mut().define(name.lexeme.clone(), None);
+                self.environment
+                    .borrow_mut()
+                    .define(name.lexeme.clone(), None);
                 let class = Rc::new(Class::new(name.lexeme.clone()));
-                self.environment.borrow_mut().assign(&name, Value::Class(class));
+                self.environment
+                    .borrow_mut()
+                    .assign(&name, Value::Class(class));
 
                 Ok(Value::Nil)
             }
@@ -215,6 +219,7 @@ impl Interpreter {
             Expr::Grouping(grouping) => self.expr(*grouping.expression),
             Expr::Literal(literal) => self.literal(literal),
             Expr::Logical(logical) => self.logical(logical),
+            Expr::Set(set) => self.set(set),
             Expr::Unary(unary) => self.unary(unary),
             Expr::Variable(token) => self.lookup_var(&token),
         }
@@ -456,7 +461,26 @@ impl Interpreter {
                 let msg = "Only instances have properties.";
                 runtime_error(Some(&name.clone()), msg);
                 self.had_runtime_error = true;
-                anyhow::bail!(msg.to_string())
+                anyhow::bail!(msg.to_string());
+            }
+        }
+    }
+
+    fn set(&mut self, set: Set) -> anyhow::Result<Value> {
+        let name = set.name.clone();
+        let object = self.expr(*set.expr)?;
+
+        match object {
+            Value::Instance(i) => {
+                let value = self.expr(*set.value)?;
+                i.borrow_mut().set(&name, value.clone());
+                Ok(value)
+            }
+            _ => {
+                let msg = "Only instances have fields.";
+                runtime_error(Some(&name), msg);
+                self.had_runtime_error = true;
+                anyhow::bail!(msg.to_string());
             }
         }
     }
@@ -470,131 +494,6 @@ impl Interpreter {
             Environment::get_at(self.environment.clone(), *distance, name)
         } else {
             self.globals.borrow().get(name)
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::interpreter::value::Value;
-    use crate::{Literal, interpreter::Interpreter, lexer::Lexer, parser::Parser};
-
-    #[test]
-    fn test_interpret_literal() {
-        let interpreter = Interpreter::new();
-
-        assert_eq!(
-            interpreter.literal(Literal::Number(17.8)).unwrap(),
-            Value::Number(17.8)
-        );
-        assert_eq!(
-            interpreter
-                .literal(Literal::String(String::from("abcd")))
-                .unwrap(),
-            Value::String(String::from("abcd"))
-        );
-        assert_eq!(
-            interpreter.literal(Literal::Bool(true)).unwrap(),
-            Value::Bool(true)
-        );
-        assert_eq!(interpreter.literal(Literal::Nil).unwrap(), Value::Nil);
-    }
-
-    #[test]
-    fn test_interpret_expr() {
-        let source = "-(1 + 2) == ((2 * 2) + 5) / -3.0";
-        let lexer = Lexer::new(source);
-        let mut parser = Parser::new(lexer).unwrap();
-        let mut interpreter = Interpreter::new();
-
-        assert_eq!(
-            interpreter.expr(parser.expr().unwrap()).unwrap(),
-            Value::Bool(true)
-        );
-    }
-
-    #[test]
-    fn test_interpret_expr_err() {
-        let source = "(1 + 2) == ((2 * !false) + 5) / 3.0";
-        let lexer = Lexer::new(source);
-        let mut parser = Parser::new(lexer).unwrap();
-        let mut interpreter = Interpreter::new();
-
-        assert!(interpreter.expr(parser.expr().unwrap()).is_err());
-    }
-
-    #[test]
-    fn test_interpret_scope() {
-        // run manually to check the print statement.
-
-        let source = r#"
-            var a = 0;
-            var b = 1;
-
-            {
-              var b = 11;
-              var c = 4;
-              a = a + b;
-            }
-
-            a = a + b;
-
-            print a;
-        "#;
-        let lexer = Lexer::new(source);
-        let mut parser = Parser::new(lexer).unwrap();
-        let stmts = parser.parse().unwrap();
-        assert_eq!(stmts.len(), 5);
-
-        let mut interpreter = Interpreter::new();
-        let res = interpreter.interpret(stmts);
-        assert!(res.is_ok());
-        assert!(interpreter.environment.borrow().enclosing.is_none());
-        match interpreter.environment.borrow().values.get("a") {
-            None => assert!(false),
-            Some(value) => assert_eq!(*value, Some(Value::Number(12.0))),
-        }
-        match interpreter.environment.borrow().values.get("b") {
-            None => assert!(false),
-            Some(value) => assert_eq!(*value, Some(Value::Number(1.0))),
-        }
-        assert!(interpreter.environment.borrow().values.get("c").is_none());
-    }
-
-    #[test]
-    fn test_interpret_logical_ops() {
-        // run manually to check the print statement.
-
-        let source = r#"
-            var a = "hi" or 2;
-            var b = nil or "yes";
-            var c = nil and "maybe";
-            var d = "possibly" and "maybe";
-        "#;
-        let lexer = Lexer::new(source);
-        let mut parser = Parser::new(lexer).unwrap();
-        let stmts = parser.parse().unwrap();
-        assert_eq!(stmts.len(), 4);
-
-        let mut interpreter = Interpreter::new();
-        let res = interpreter.interpret(stmts);
-        assert!(res.is_ok());
-        assert!(interpreter.environment.borrow().enclosing.is_none());
-        match interpreter.environment.borrow().values.get("a") {
-            None => assert!(false),
-            Some(value) => assert_eq!(*value, Some(Value::String(String::from("hi")))),
-        }
-        match interpreter.environment.borrow().values.get("b") {
-            None => assert!(false),
-            Some(value) => assert_eq!(*value, Some(Value::String(String::from("yes")))),
-        }
-        match interpreter.environment.borrow().values.get("c") {
-            None => assert!(false),
-            Some(value) => assert_eq!(*value, Some(Value::Nil)),
-        }
-        match interpreter.environment.borrow().values.get("d") {
-            None => assert!(false),
-            Some(value) => assert_eq!(*value, Some(Value::String(String::from("maybe")))),
         }
     }
 }

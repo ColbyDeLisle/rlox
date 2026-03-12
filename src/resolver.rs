@@ -176,6 +176,10 @@ impl Resolver {
                 self.resolve_expr(logical.left.as_ref())?;
                 self.resolve_expr(logical.right.as_ref())?;
             }
+            Expr::Set(set) => {
+                self.resolve_expr(set.value.as_ref())?;
+                self.resolve_expr(set.expr.as_ref())?;
+            }
             Expr::Unary(unary) => {
                 self.resolve_expr(unary.right.as_ref())?;
             }

@@ -11,6 +11,7 @@ pub enum Expr {
     Grouping(Grouping),
     Literal(Literal),
     Logical(Logical),
+    Set(Set),
     Unary(Unary),
     Variable(Token), // here I'm not using a separate struct for the data
 }
@@ -56,6 +57,12 @@ pub struct Unary {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Get {
     pub expr: Box<Expr>,
-    pub name: Token
+    pub name: Token,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Set {
+    pub expr: Box<Expr>,
+    pub name: Token,
+    pub value: Box<Expr>,
+}

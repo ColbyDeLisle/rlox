@@ -1,11 +1,11 @@
+use super::functions::LoxCallable;
+use crate::interpreter::Interpreter;
+use crate::interpreter::value::Value;
+use crate::tokens::Token;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
-use crate::interpreter::Interpreter;
-use crate::interpreter::value::Value;
-use crate::tokens::Token;
-use super::functions::LoxCallable;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Class {
@@ -15,9 +15,7 @@ pub(crate) struct Class {
 impl Class {
     /// Create a new Lox class.
     pub(crate) fn new(class_name: String) -> Self {
-        Self {
-            class_name
-        }
+        Self { class_name }
     }
 }
 
@@ -51,11 +49,10 @@ impl LoxCallable for Rc<Class> {
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub(crate) struct Instance {
     pub(crate) class: Rc<Class>,
-    pub(crate) fields: HashMap<String, Value>
+    pub(crate) fields: HashMap<String, Value>,
 }
 
 impl Instance {
@@ -69,6 +66,10 @@ impl Instance {
     pub(crate) fn get(&self, name: &Token) -> Option<Value> {
         self.fields.get(&name.lexeme).cloned()
     }
+
+    pub(crate) fn set(&mut self, name: &Token, value: Value) {
+        self.fields.insert(name.lexeme.to_owned(), value);
+    }
 }
 
 impl Display for Instance {
@@ -76,6 +77,3 @@ impl Display for Instance {
         write!(f, "{} instance", self.class.class_name)
     }
 }
-
-
-

@@ -1,6 +1,6 @@
-use std::cell::RefCell;
-use crate::{interpreter::functions::LoxCallable};
 use super::class::{Class, Instance};
+use crate::interpreter::functions::LoxCallable;
+use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
