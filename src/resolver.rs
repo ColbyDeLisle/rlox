@@ -14,6 +14,7 @@ type Scope = HashMap<String, SymbolState>;
 enum FunctionType {
     None,
     Function,
+    Method,
 }
 
 /// The Lox resolver.
@@ -55,6 +56,13 @@ impl Resolver {
             Stmt::Class(name, methods) => {
                 self.declare(name)?;
                 self.define(name.lexeme.clone());
+
+                for method in methods {
+                    let Stmt::Function(token, params, methods) = stmt else {
+                        unreachable!();
+                    };
+                    self.resolve_function(token, params, methods, FunctionType::Method)?;
+                }
             }
             Stmt::Var(token, expr) => {
                 self.declare(token)?;
@@ -64,19 +72,7 @@ impl Resolver {
                 self.define(token.lexeme.clone())
             }
             Stmt::Function(token, params, body) => {
-                self.declare(token)?;
-                self.define(token.lexeme.clone());
-
-                let enclosing_function_type = self.current_function_type;
-                self.current_function_type = FunctionType::Function;
-                self.begin_scope();
-                for param in params {
-                    self.declare(param)?;
-                    self.define(param.lexeme.clone());
-                }
-                self.resolve(body)?;
-                self.end_scope();
-                self.current_function_type = enclosing_function_type;
+                self.resolve_function(token, params, body, FunctionType::Function)?;
             }
             Stmt::Expression(expr) => {
                 self.resolve_expr(&expr)?;
@@ -196,5 +192,29 @@ impl Resolver {
                 break;
             }
         }
+    }
+
+    fn resolve_function(
+        &mut self,
+        token: &Token,
+        params: &[Token],
+        body: &[Stmt],
+        function_type: FunctionType,
+    ) -> anyhow::Result<()> {
+        self.declare(token)?;
+        self.define(token.lexeme.clone());
+
+        let enclosing_function_type = self.current_function_type;
+        self.current_function_type = function_type;
+        self.begin_scope();
+        for param in params {
+            self.declare(param)?;
+            self.define(param.lexeme.clone());
+        }
+        self.resolve(body)?;
+        self.end_scope();
+        self.current_function_type = enclosing_function_type;
+
+        Ok(())
     }
 }

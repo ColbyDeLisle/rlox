@@ -17,7 +17,7 @@ pub trait LoxCallable: Debug {
     fn call(&self, interpreter: &mut Interpreter, args: &[Value]) -> anyhow::Result<Value>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct LoxFunction {
     pub(super) name: String,
     pub(super) params: Vec<String>,

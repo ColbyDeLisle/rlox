@@ -118,7 +118,26 @@ impl Interpreter {
                 self.environment
                     .borrow_mut()
                     .define(name.lexeme.clone(), None);
-                let class = Rc::new(Class::new(name.lexeme.clone()));
+
+                let mut class_methods = HashMap::new();
+                for method in methods {
+                    let Stmt::Function(name, params, body) = method else {
+                        unreachable!()
+                    };
+                    let m = LoxFunction {
+                        name: name.lexeme.clone(),
+                        params: params.iter().map(|t| t.lexeme.clone()).collect(),
+                        body,
+                        closure: self.environment.clone(),
+                    };
+
+                    class_methods.insert(name.lexeme.clone(), m);
+                }
+
+                let class = Rc::new(Class {
+                    class_name: name.lexeme.clone(),
+                    class_methods,
+                });
                 self.environment
                     .borrow_mut()
                     .assign(&name, Value::Class(class));

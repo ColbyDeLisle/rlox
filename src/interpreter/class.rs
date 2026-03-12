@@ -1,4 +1,4 @@
-use super::functions::LoxCallable;
+use super::functions::{LoxCallable, LoxFunction};
 use crate::interpreter::Interpreter;
 use crate::interpreter::value::Value;
 use crate::tokens::Token;
@@ -10,13 +10,7 @@ use std::rc::Rc;
 #[derive(Debug, Clone)]
 pub(crate) struct Class {
     pub(crate) class_name: String,
-}
-
-impl Class {
-    /// Create a new Lox class.
-    pub(crate) fn new(class_name: String) -> Self {
-        Self { class_name }
-    }
+    pub(crate) class_methods: HashMap<String, LoxFunction>,
 }
 
 impl Display for Class {
@@ -64,7 +58,16 @@ impl Instance {
     }
 
     pub(crate) fn get(&self, name: &Token) -> Option<Value> {
-        self.fields.get(&name.lexeme).cloned()
+        let field = self.fields.get(&name.lexeme).cloned();
+        if field.is_none() {
+            self.class
+                .class_methods
+                .get(&name.lexeme)
+                .cloned()
+                .map(|m| Value::Callable(Rc::new(m)))
+        } else {
+            field
+        }
     }
 
     pub(crate) fn set(&mut self, name: &Token, value: Value) {
