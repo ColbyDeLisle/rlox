@@ -17,14 +17,22 @@ enum FunctionType {
     Method,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ClassType {
+    None,
+    Class,
+}
+
 /// The Lox resolver.
 pub(crate) struct Resolver {
     /// The Lox interpreter for which symbols are being resolved.
     pub(crate) interpreter: Interpreter,
     /// A stack of scopes used during resolution.
     scopes: Vec<Scope>,
-    /// Whether the current scope is the body of a callable.
+    /// Whether the current scope is in the body of a callable.
     current_function_type: FunctionType,
+    /// Whether the current scope is in a class definition.
+    current_class_type: ClassType
 }
 
 impl Resolver {
@@ -34,6 +42,7 @@ impl Resolver {
             interpreter,
             scopes: Vec::new(),
             current_function_type: FunctionType::None,
+            current_class_type: ClassType::None
         }
     }
 
@@ -54,6 +63,9 @@ impl Resolver {
                 self.end_scope();
             }
             Stmt::Class(name, methods) => {
+                let enclosing_class_type = self.current_class_type;
+                self.current_class_type = ClassType::Class;
+
                 self.declare(name)?;
                 self.define(name.lexeme.clone());
 
@@ -68,6 +80,8 @@ impl Resolver {
                 }
 
                 self.end_scope();
+
+                self.current_class_type = enclosing_class_type;
             }
             Stmt::Var(token, expr) => {
                 self.declare(token)?;
@@ -182,6 +196,12 @@ impl Resolver {
                 self.resolve_expr(set.expr.as_ref())?;
             }
             Expr::This(token) => {
+                if self.current_class_type == ClassType::None {
+                    let msg = "Can't use 'this' outside of a class.";
+                    compile_time_error(Some(&token), msg);
+                    anyhow::bail!(msg);
+                }
+
                 self.resolve_local(token);
             }
             Expr::Unary(unary) => {
