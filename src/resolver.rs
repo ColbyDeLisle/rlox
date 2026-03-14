@@ -14,6 +14,14 @@ type Scope = HashMap<String, SymbolState>;
 enum FunctionType {
     None,
     Function,
+    Initializer,
+    Method,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ClassType {
+    None,
+    Class,
 }
 
 /// The Lox resolver.
@@ -22,8 +30,10 @@ pub(crate) struct Resolver {
     pub(crate) interpreter: Interpreter,
     /// A stack of scopes used during resolution.
     scopes: Vec<Scope>,
-    /// Whether the current scope is the body of a callable.
+    /// Whether the current scope is in the body of a callable.
     current_function_type: FunctionType,
+    /// Whether the current scope is in a class definition.
+    current_class_type: ClassType,
 }
 
 impl Resolver {
@@ -33,6 +43,7 @@ impl Resolver {
             interpreter,
             scopes: Vec::new(),
             current_function_type: FunctionType::None,
+            current_class_type: ClassType::None,
         }
     }
 
@@ -52,6 +63,37 @@ impl Resolver {
                 self.resolve(stmts)?;
                 self.end_scope();
             }
+            Stmt::Class(name, methods) => {
+                let enclosing_class_type = self.current_class_type;
+                self.current_class_type = ClassType::Class;
+
+                self.declare(name)?;
+                self.define(name.lexeme.clone());
+
+                self.begin_scope();
+                self.scopes
+                    .last_mut()
+                    .unwrap()
+                    .insert("this".to_string(), SymbolState::Resolved);
+
+                for method in methods {
+                    let Stmt::Function(token, params, body) = method else {
+                        unreachable!();
+                    };
+
+                    let function_type = if token.lexeme == "init" {
+                        FunctionType::Initializer
+                    } else {
+                        FunctionType::Method
+                    };
+
+                    self.resolve_function(token, params, body, function_type)?;
+                }
+
+                self.end_scope();
+
+                self.current_class_type = enclosing_class_type;
+            }
             Stmt::Var(token, expr) => {
                 self.declare(token)?;
                 if let Some(initializer) = expr {
@@ -60,19 +102,7 @@ impl Resolver {
                 self.define(token.lexeme.clone())
             }
             Stmt::Function(token, params, body) => {
-                self.declare(token)?;
-                self.define(token.lexeme.clone());
-
-                let enclosing_function_type = self.current_function_type;
-                self.current_function_type = FunctionType::Function;
-                self.begin_scope();
-                for param in params {
-                    self.declare(param)?;
-                    self.define(param.lexeme.clone());
-                }
-                self.resolve(body)?;
-                self.end_scope();
-                self.current_function_type = enclosing_function_type;
+                self.resolve_function(token, params, body, FunctionType::Function)?;
             }
             Stmt::Expression(expr) => {
                 self.resolve_expr(&expr)?;
@@ -88,10 +118,18 @@ impl Resolver {
                 self.resolve_expr(&expr)?;
             }
             Stmt::Return(keyword, expr) => {
-                if self.current_function_type == FunctionType::None {
-                    let msg = "Can't return from top-level code.";
-                    compile_time_error(Some(keyword), msg);
-                    anyhow::bail!(msg);
+                match self.current_function_type {
+                    FunctionType::None => {
+                        let msg = "Can't return from top-level code.";
+                        compile_time_error(Some(keyword), msg);
+                        anyhow::bail!(msg);
+                    }
+                    FunctionType::Initializer => {
+                        let msg = "Can't return a value from an initializer.";
+                        compile_time_error(Some(keyword), msg);
+                        anyhow::bail!(msg);
+                    }
+                    _ => {}
                 }
 
                 if let Some(expr) = expr {
@@ -149,7 +187,7 @@ impl Resolver {
             }
             Expr::Assign(assign) => {
                 self.resolve_expr(assign.value.as_ref())?;
-                self.resolve_local(&assign.name)
+                self.resolve_local(&assign.name);
             }
             Expr::Binary(binary) => {
                 self.resolve_expr(binary.left.as_ref())?;
@@ -161,6 +199,9 @@ impl Resolver {
                     self.resolve_expr(arg)?;
                 }
             }
+            Expr::Get(get) => {
+                self.resolve_expr(get.expr.as_ref())?;
+            }
             Expr::Grouping(grouping) => {
                 self.resolve_expr(grouping.expression.as_ref())?;
             }
@@ -168,6 +209,19 @@ impl Resolver {
             Expr::Logical(logical) => {
                 self.resolve_expr(logical.left.as_ref())?;
                 self.resolve_expr(logical.right.as_ref())?;
+            }
+            Expr::Set(set) => {
+                self.resolve_expr(set.value.as_ref())?;
+                self.resolve_expr(set.expr.as_ref())?;
+            }
+            Expr::This(token) => {
+                if self.current_class_type == ClassType::None {
+                    let msg = "Can't use 'this' outside of a class.";
+                    compile_time_error(Some(&token), msg);
+                    anyhow::bail!(msg);
+                }
+
+                self.resolve_local(token);
             }
             Expr::Unary(unary) => {
                 self.resolve_expr(unary.right.as_ref())?;
@@ -185,5 +239,29 @@ impl Resolver {
                 break;
             }
         }
+    }
+
+    fn resolve_function(
+        &mut self,
+        token: &Token,
+        params: &[Token],
+        body: &[Stmt],
+        function_type: FunctionType,
+    ) -> anyhow::Result<()> {
+        self.declare(token)?;
+        self.define(token.lexeme.clone());
+
+        let enclosing_function_type = self.current_function_type;
+        self.current_function_type = function_type;
+        self.begin_scope();
+        for param in params {
+            self.declare(param)?;
+            self.define(param.lexeme.clone());
+        }
+        self.resolve(body)?;
+        self.end_scope();
+        self.current_function_type = enclosing_function_type;
+
+        Ok(())
     }
 }

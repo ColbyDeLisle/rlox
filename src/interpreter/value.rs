@@ -1,4 +1,6 @@
+use super::class::{Class, Instance};
 use crate::interpreter::functions::LoxCallable;
+use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
@@ -13,6 +15,10 @@ pub enum Value {
     Bool(bool),
     /// A Lox callable.
     Callable(Rc<dyn LoxCallable>),
+    /// A Lox class.
+    Class(Rc<Class>),
+    /// An instance of a Lox class.
+    Instance(Rc<RefCell<Instance>>),
     /// The special Lox value, `Nil`.
     Nil,
 }
@@ -25,6 +31,7 @@ impl PartialEq for Value {
             (Value::Bool(a), Value::Bool(b)) => *a == *b,
             (Value::Nil, Value::Nil) => true,
             (Value::Callable(f), Value::Callable(g)) => f.name() == g.name(),
+            (Value::Class(c), Value::Class(d)) => c.class_name == d.class_name,
             _ => false,
         }
     }
@@ -50,34 +57,11 @@ impl Display for Value {
                     write!(f, "<fn {}>", c.name())
                 }
             }
-        }
-    }
-}
-
-impl Value {
-    pub fn to_test_string(&self) -> String {
-        match self {
-            Value::Number(n) => {
-                // If the number is whole, show it as an integer too
-                let int_part = *n as i32;
-                if (*n - int_part as f32).abs() < f32::EPSILON {
-                    // Output: "Number 123 123.0"
-                    format!("Number {} {}", int_part, n)
-                } else {
-                    // Output: "Number 3.14 3.14"
-                    format!("Number {} {}", n, n)
-                }
+            Value::Class(c) => {
+                write!(f, "{c}")
             }
-            Value::String(s) => format!("String {}", s),
-            Value::Bool(b) => format!("Boolean {}", b),
-            Value::Nil => "Nil nil".to_string(),
-            Value::Callable(c) => {
-                // Test suite usually expects something like "<fn foo>" or "<native fn>"
-                if c.name().is_empty() {
-                    "<native fn>".to_string()
-                } else {
-                    format!("<fn {}>", c.name())
-                }
+            Value::Instance(i) => {
+                write!(f, "{}", i.borrow())
             }
         }
     }

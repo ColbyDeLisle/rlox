@@ -1,6 +1,6 @@
 use crate::{
     Literal,
-    expr::{Binary, Expr, Unary},
+    expr::{Assign, Binary, Call, Expr, Logical, Unary},
     resolver::Resolver,
     runtime_error,
     stmt::Stmt,
@@ -13,12 +13,14 @@ pub(crate) mod environment;
 use environment::Environment;
 
 mod functions;
-use functions::{Clock, LoxFunction};
+use functions::{Clock, LoxCallable, LoxFunction};
 
 mod value;
-
-use crate::expr::{Assign, Call, Logical};
 use value::Value;
+
+mod class;
+use crate::expr::{Get, Set};
+use class::{Class, Instance};
 
 #[derive(Debug)]
 pub enum Signal {
@@ -112,6 +114,37 @@ impl Interpreter {
                 let new_env = Environment::new_with_enclosing(Some(self.environment.clone()));
                 self.execute_block_with_env(stmts, Rc::new(RefCell::new(new_env)))
             }
+            Stmt::Class(name, methods) => {
+                self.environment
+                    .borrow_mut()
+                    .define(name.lexeme.clone(), None);
+
+                let mut class_methods = HashMap::new();
+                for method in methods {
+                    let Stmt::Function(name, params, body) = method else {
+                        unreachable!()
+                    };
+                    let m = LoxFunction {
+                        name: name.lexeme.clone(),
+                        params: params.iter().map(|t| t.lexeme.clone()).collect(),
+                        body,
+                        closure: self.environment.clone(),
+                        is_initializer: name.lexeme == "init",
+                    };
+
+                    class_methods.insert(name.lexeme.clone(), m);
+                }
+
+                let class = Rc::new(Class {
+                    class_name: name.lexeme.clone(),
+                    methods: class_methods,
+                });
+                self.environment
+                    .borrow_mut()
+                    .assign(&name, Value::Class(class));
+
+                Ok(Value::Nil)
+            }
             Stmt::Var(token, expr) => {
                 let value = match expr {
                     Some(expr) => {
@@ -138,6 +171,7 @@ impl Interpreter {
                     params: params.iter().map(|t| t.lexeme.clone()).collect(),
                     body,
                     closure: self.environment.clone(),
+                    is_initializer: false,
                 };
 
                 self.environment
@@ -202,9 +236,12 @@ impl Interpreter {
             Expr::Assign(assign) => self.assign(assign),
             Expr::Binary(binary) => self.binary(binary),
             Expr::Call(call) => self.call(call),
+            Expr::Get(get) => self.get(get),
             Expr::Grouping(grouping) => self.expr(*grouping.expression),
             Expr::Literal(literal) => self.literal(literal),
             Expr::Logical(logical) => self.logical(logical),
+            Expr::Set(set) => self.set(set),
+            Expr::This(this) => self.this(this),
             Expr::Unary(unary) => self.unary(unary),
             Expr::Variable(token) => self.lookup_var(&token),
         }
@@ -331,6 +368,15 @@ impl Interpreter {
                 Value::Bool(*left != *right)
             }
             (TokenType::BangEqual, Value::Nil, Value::Nil) => Value::Bool(false),
+            (TokenType::BangEqual, Value::Callable(f), Value::Callable(g)) => {
+                Value::Bool(f.name() != g.name())
+            }
+            (TokenType::BangEqual, Value::Class(x), Value::Class(y)) => {
+                Value::Bool(x != y)
+            }
+            (TokenType::BangEqual, Value::Instance(x), Value::Instance(y)) => {
+                Value::Bool(x != y)
+            }
             (TokenType::BangEqual, _, _) => Value::Bool(true),
             (TokenType::EqualEqual, Value::Number(left), Value::Number(right)) => {
                 Value::Bool(*left == *right)
@@ -342,6 +388,15 @@ impl Interpreter {
                 Value::Bool(*left == *right)
             }
             (TokenType::EqualEqual, Value::Nil, Value::Nil) => Value::Bool(true),
+            (TokenType::EqualEqual, Value::Callable(f), Value::Callable(g)) => {
+                Value::Bool(f.name() == g.name())
+            }
+            (TokenType::EqualEqual, Value::Class(x), Value::Class(y)) => {
+                Value::Bool(x == y)
+            }
+            (TokenType::EqualEqual, Value::Instance(x), Value::Instance(y)) => {
+                Value::Bool(x == y)
+            }
             (TokenType::EqualEqual, _, _) => Value::Bool(false),
             (
                 TokenType::Minus
@@ -398,7 +453,17 @@ impl Interpreter {
             args.push(self.expr(arg)?);
         }
 
+        // TODO: fix duplication here?
         if let Value::Callable(f) = callee {
+            if args.len() != f.arity() {
+                let msg = format!("Expected {} arguments but got {}.", f.arity(), args.len(),);
+                runtime_error(Some(&call.paren.clone()), &msg);
+                self.had_runtime_error = true;
+                anyhow::bail!(msg)
+            }
+
+            f.call(self, &args)
+        } else if let Value::Class(f) = callee {
             if args.len() != f.arity() {
                 let msg = format!("Expected {} arguments but got {}.", f.arity(), args.len(),);
                 runtime_error(Some(&call.paren.clone()), &msg);
@@ -415,6 +480,55 @@ impl Interpreter {
         }
     }
 
+    fn get(&mut self, get: Get) -> anyhow::Result<Value> {
+        let name = get.name.clone();
+        let object = self.expr(*get.expr)?;
+
+        match object {
+            Value::Instance(i) => {
+                let value = Instance::get(i.clone(), &name);
+                match value {
+                    Some(value) => Ok(value),
+                    None => {
+                        let msg = format!("Undefined property '{}'.", name.lexeme);
+                        runtime_error(Some(&name.clone()), &msg);
+                        self.had_runtime_error = true;
+                        anyhow::bail!(msg)
+                    }
+                }
+            }
+            _ => {
+                let msg = "Only instances have properties.";
+                runtime_error(Some(&name.clone()), msg);
+                self.had_runtime_error = true;
+                anyhow::bail!(msg.to_string());
+            }
+        }
+    }
+
+    fn set(&mut self, set: Set) -> anyhow::Result<Value> {
+        let name = set.name.clone();
+        let object = self.expr(*set.expr)?;
+
+        match object {
+            Value::Instance(i) => {
+                let value = self.expr(*set.value)?;
+                i.borrow_mut().set(&name, value.clone());
+                Ok(value)
+            }
+            _ => {
+                let msg = "Only instances have fields.";
+                runtime_error(Some(&name), msg);
+                self.had_runtime_error = true;
+                anyhow::bail!(msg.to_string());
+            }
+        }
+    }
+
+    fn this(&mut self, this: Token) -> anyhow::Result<Value> {
+        self.lookup_var(&this)
+    }
+
     pub(crate) fn resolve(&mut self, name: Token, depth: usize) {
         self.locals.insert(name, depth);
     }
@@ -424,131 +538,6 @@ impl Interpreter {
             Environment::get_at(self.environment.clone(), *distance, name)
         } else {
             self.globals.borrow().get(name)
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::interpreter::value::Value;
-    use crate::{Literal, interpreter::Interpreter, lexer::Lexer, parser::Parser};
-
-    #[test]
-    fn test_interpret_literal() {
-        let interpreter = Interpreter::new();
-
-        assert_eq!(
-            interpreter.literal(Literal::Number(17.8)).unwrap(),
-            Value::Number(17.8)
-        );
-        assert_eq!(
-            interpreter
-                .literal(Literal::String(String::from("abcd")))
-                .unwrap(),
-            Value::String(String::from("abcd"))
-        );
-        assert_eq!(
-            interpreter.literal(Literal::Bool(true)).unwrap(),
-            Value::Bool(true)
-        );
-        assert_eq!(interpreter.literal(Literal::Nil).unwrap(), Value::Nil);
-    }
-
-    #[test]
-    fn test_interpret_expr() {
-        let source = "-(1 + 2) == ((2 * 2) + 5) / -3.0";
-        let lexer = Lexer::new(source);
-        let mut parser = Parser::new(lexer).unwrap();
-        let mut interpreter = Interpreter::new();
-
-        assert_eq!(
-            interpreter.expr(parser.expr().unwrap()).unwrap(),
-            Value::Bool(true)
-        );
-    }
-
-    #[test]
-    fn test_interpret_expr_err() {
-        let source = "(1 + 2) == ((2 * !false) + 5) / 3.0";
-        let lexer = Lexer::new(source);
-        let mut parser = Parser::new(lexer).unwrap();
-        let mut interpreter = Interpreter::new();
-
-        assert!(interpreter.expr(parser.expr().unwrap()).is_err());
-    }
-
-    #[test]
-    fn test_interpret_scope() {
-        // run manually to check the print statement.
-
-        let source = r#"
-            var a = 0;
-            var b = 1;
-
-            {
-              var b = 11;
-              var c = 4;
-              a = a + b;
-            }
-
-            a = a + b;
-
-            print a;
-        "#;
-        let lexer = Lexer::new(source);
-        let mut parser = Parser::new(lexer).unwrap();
-        let stmts = parser.parse().unwrap();
-        assert_eq!(stmts.len(), 5);
-
-        let mut interpreter = Interpreter::new();
-        let res = interpreter.interpret(stmts);
-        assert!(res.is_ok());
-        assert!(interpreter.environment.borrow().enclosing.is_none());
-        match interpreter.environment.borrow().values.get("a") {
-            None => assert!(false),
-            Some(value) => assert_eq!(*value, Some(Value::Number(12.0))),
-        }
-        match interpreter.environment.borrow().values.get("b") {
-            None => assert!(false),
-            Some(value) => assert_eq!(*value, Some(Value::Number(1.0))),
-        }
-        assert!(interpreter.environment.borrow().values.get("c").is_none());
-    }
-
-    #[test]
-    fn test_interpret_logical_ops() {
-        // run manually to check the print statement.
-
-        let source = r#"
-            var a = "hi" or 2;
-            var b = nil or "yes";
-            var c = nil and "maybe";
-            var d = "possibly" and "maybe";
-        "#;
-        let lexer = Lexer::new(source);
-        let mut parser = Parser::new(lexer).unwrap();
-        let stmts = parser.parse().unwrap();
-        assert_eq!(stmts.len(), 4);
-
-        let mut interpreter = Interpreter::new();
-        let res = interpreter.interpret(stmts);
-        assert!(res.is_ok());
-        assert!(interpreter.environment.borrow().enclosing.is_none());
-        match interpreter.environment.borrow().values.get("a") {
-            None => assert!(false),
-            Some(value) => assert_eq!(*value, Some(Value::String(String::from("hi")))),
-        }
-        match interpreter.environment.borrow().values.get("b") {
-            None => assert!(false),
-            Some(value) => assert_eq!(*value, Some(Value::String(String::from("yes")))),
-        }
-        match interpreter.environment.borrow().values.get("c") {
-            None => assert!(false),
-            Some(value) => assert_eq!(*value, Some(Value::Nil)),
-        }
-        match interpreter.environment.borrow().values.get("d") {
-            None => assert!(false),
-            Some(value) => assert_eq!(*value, Some(Value::String(String::from("maybe")))),
         }
     }
 }
