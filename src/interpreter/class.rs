@@ -57,17 +57,18 @@ impl Instance {
         }
     }
 
-    pub(crate) fn get(&self, name: &Token) -> Option<Value> {
-        let field = self.fields.get(&name.lexeme).cloned();
-        if field.is_none() {
-            self.class
-                .class_methods
-                .get(&name.lexeme)
-                .cloned()
-                .map(|m| Value::Callable(Rc::new(m)))
-        } else {
-            field
+    pub(crate) fn get(instance: Rc<RefCell<Instance>>, name: &Token) -> Option<Value> {
+        let self_ = instance.borrow();
+
+        if let Some(field) = self_.fields.get(&name.lexeme) {
+            return Some(field.clone());
         }
+
+        if let Some(method) = self_.class.class_methods.get(&name.lexeme) {
+            return Some(Value::Callable(Rc::new(method.bind(instance.clone()))));
+        }
+
+        None
     }
 
     pub(crate) fn set(&mut self, name: &Token, value: Value) {

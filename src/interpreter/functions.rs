@@ -6,6 +6,7 @@ use std::rc::Rc;
 
 mod native_functions;
 pub(super) use native_functions::Clock;
+use crate::interpreter::class::Instance;
 
 /// A trait representing a callable in Lox.
 pub trait LoxCallable: Debug {
@@ -51,6 +52,20 @@ impl LoxCallable for LoxFunction {
             Err(Signal::Return(val)) => Ok(val),
             Err(Signal::RuntimeError(e)) => Err(e),
             Err(Signal::ResolveError) => anyhow::bail!(""),
+        }
+    }
+}
+
+impl LoxFunction {
+    pub(crate) fn bind(&self, instance: Rc<RefCell<Instance>>) -> LoxFunction {
+        let env = Rc::new(RefCell::new(Environment::new_with_enclosing(Some(self.closure.clone()))));
+        env.borrow_mut().define("this".to_string(), Some(Value::Instance(instance)));
+
+        LoxFunction {
+            name: self.name.clone(),
+            params: self.params.clone(),
+            body: self.body.clone(),
+            closure: env,
         }
     }
 }

@@ -57,12 +57,17 @@ impl Resolver {
                 self.declare(name)?;
                 self.define(name.lexeme.clone());
 
+                self.begin_scope();
+                self.scopes.last_mut().unwrap().insert("this".to_string(), SymbolState::Resolved);
+
                 for method in methods {
-                    let Stmt::Function(token, params, methods) = stmt else {
+                    let Stmt::Function(token, params, methods) = method else {
                         unreachable!();
                     };
                     self.resolve_function(token, params, methods, FunctionType::Method)?;
                 }
+
+                self.end_scope();
             }
             Stmt::Var(token, expr) => {
                 self.declare(token)?;
@@ -149,7 +154,7 @@ impl Resolver {
             }
             Expr::Assign(assign) => {
                 self.resolve_expr(assign.value.as_ref())?;
-                self.resolve_local(&assign.name)
+                self.resolve_local(&assign.name);
             }
             Expr::Binary(binary) => {
                 self.resolve_expr(binary.left.as_ref())?;
@@ -175,6 +180,9 @@ impl Resolver {
             Expr::Set(set) => {
                 self.resolve_expr(set.value.as_ref())?;
                 self.resolve_expr(set.expr.as_ref())?;
+            }
+            Expr::This(token) => {
+                self.resolve_local(token);
             }
             Expr::Unary(unary) => {
                 self.resolve_expr(unary.right.as_ref())?;

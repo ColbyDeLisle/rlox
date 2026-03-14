@@ -12,8 +12,9 @@ pub enum Expr {
     Literal(Literal),
     Logical(Logical),
     Set(Set),
+    This(Token),
     Unary(Unary),
-    Variable(Token), // here I'm not using a separate struct for the data
+    Variable(Token),
 }
 
 #[derive(Debug, Clone, PartialEq)]

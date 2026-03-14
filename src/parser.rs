@@ -516,6 +516,7 @@ impl<'source> Parser<'source> {
             Number | String => {
                 Expr::Literal(self.previous.clone().literal.expect("can get literal"))
             }
+            This => Expr::This(self.previous.clone()),
             Identifier => Expr::Variable(self.previous.clone()),
             LeftParen => {
                 let expr = self.expr()?;

@@ -20,7 +20,7 @@ use value::Value;
 
 mod class;
 use crate::expr::{Get, Set};
-use class::Class;
+use class::{Class, Instance};
 
 #[derive(Debug)]
 pub enum Signal {
@@ -239,6 +239,7 @@ impl Interpreter {
             Expr::Literal(literal) => self.literal(literal),
             Expr::Logical(logical) => self.logical(logical),
             Expr::Set(set) => self.set(set),
+            Expr::This(this) => self.this(this),
             Expr::Unary(unary) => self.unary(unary),
             Expr::Variable(token) => self.lookup_var(&token),
         }
@@ -465,7 +466,7 @@ impl Interpreter {
 
         match object {
             Value::Instance(i) => {
-                let value = i.borrow().get(&name);
+                let value = Instance::get(i.clone(), &name);
                 match value {
                     Some(value) => Ok(value),
                     None => {
@@ -502,6 +503,10 @@ impl Interpreter {
                 anyhow::bail!(msg.to_string());
             }
         }
+    }
+
+    fn this(&mut self, this: Token) -> anyhow::Result<Value> {
+        self.lookup_var(&this)
     }
 
     pub(crate) fn resolve(&mut self, name: Token, depth: usize) {
