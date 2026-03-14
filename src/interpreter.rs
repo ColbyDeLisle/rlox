@@ -129,6 +129,7 @@ impl Interpreter {
                         params: params.iter().map(|t| t.lexeme.clone()).collect(),
                         body,
                         closure: self.environment.clone(),
+                        is_initializer: name.lexeme == "init",
                     };
 
                     class_methods.insert(name.lexeme.clone(), m);
@@ -136,7 +137,7 @@ impl Interpreter {
 
                 let class = Rc::new(Class {
                     class_name: name.lexeme.clone(),
-                    class_methods,
+                    methods: class_methods,
                 });
                 self.environment
                     .borrow_mut()
@@ -170,6 +171,7 @@ impl Interpreter {
                     params: params.iter().map(|t| t.lexeme.clone()).collect(),
                     body,
                     closure: self.environment.clone(),
+                    is_initializer: false,
                 };
 
                 self.environment

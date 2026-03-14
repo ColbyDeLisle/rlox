@@ -14,6 +14,7 @@ type Scope = HashMap<String, SymbolState>;
 enum FunctionType {
     None,
     Function,
+    Initializer,
     Method,
 }
 
@@ -32,7 +33,7 @@ pub(crate) struct Resolver {
     /// Whether the current scope is in the body of a callable.
     current_function_type: FunctionType,
     /// Whether the current scope is in a class definition.
-    current_class_type: ClassType
+    current_class_type: ClassType,
 }
 
 impl Resolver {
@@ -42,7 +43,7 @@ impl Resolver {
             interpreter,
             scopes: Vec::new(),
             current_function_type: FunctionType::None,
-            current_class_type: ClassType::None
+            current_class_type: ClassType::None,
         }
     }
 
@@ -70,13 +71,23 @@ impl Resolver {
                 self.define(name.lexeme.clone());
 
                 self.begin_scope();
-                self.scopes.last_mut().unwrap().insert("this".to_string(), SymbolState::Resolved);
+                self.scopes
+                    .last_mut()
+                    .unwrap()
+                    .insert("this".to_string(), SymbolState::Resolved);
 
                 for method in methods {
-                    let Stmt::Function(token, params, methods) = method else {
+                    let Stmt::Function(token, params, body) = method else {
                         unreachable!();
                     };
-                    self.resolve_function(token, params, methods, FunctionType::Method)?;
+
+                    let function_type = if token.lexeme == "init" {
+                        FunctionType::Initializer
+                    } else {
+                        FunctionType::Method
+                    };
+
+                    self.resolve_function(token, params, body, function_type)?;
                 }
 
                 self.end_scope();
@@ -107,10 +118,18 @@ impl Resolver {
                 self.resolve_expr(&expr)?;
             }
             Stmt::Return(keyword, expr) => {
-                if self.current_function_type == FunctionType::None {
-                    let msg = "Can't return from top-level code.";
-                    compile_time_error(Some(keyword), msg);
-                    anyhow::bail!(msg);
+                match self.current_function_type {
+                    FunctionType::None => {
+                        let msg = "Can't return from top-level code.";
+                        compile_time_error(Some(keyword), msg);
+                        anyhow::bail!(msg);
+                    }
+                    FunctionType::Initializer => {
+                        let msg = "Can't return a value from an initializer.";
+                        compile_time_error(Some(keyword), msg);
+                        anyhow::bail!(msg);
+                    }
+                    _ => {}
                 }
 
                 if let Some(expr) = expr {

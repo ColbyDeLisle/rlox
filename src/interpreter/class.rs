@@ -10,7 +10,7 @@ use std::rc::Rc;
 #[derive(Debug, Clone)]
 pub(crate) struct Class {
     pub(crate) class_name: String,
-    pub(crate) class_methods: HashMap<String, LoxFunction>,
+    pub(crate) methods: HashMap<String, LoxFunction>,
 }
 
 impl Display for Class {
@@ -33,13 +33,22 @@ impl LoxCallable for Rc<Class> {
     }
 
     fn arity(&self) -> usize {
-        0
+        if let Some(initializer) = self.methods.get("init") {
+            initializer.arity()
+        } else {
+            0
+        }
     }
 
-    fn call(&self, _interpreter: &mut Interpreter, _args: &[Value]) -> anyhow::Result<Value> {
-        let instance = Instance::new(self.clone());
+    fn call(&self, interpreter: &mut Interpreter, args: &[Value]) -> anyhow::Result<Value> {
+        let instance = Rc::new(RefCell::new(Instance::new(self.clone())));
 
-        Ok(Value::Instance(Rc::new(RefCell::new(instance))))
+        if let Some(initializer) = self.methods.get("init") {
+            let init = LoxFunction::bind(initializer, instance.clone());
+            init.call(interpreter, args)?;
+        }
+
+        Ok(Value::Instance(instance))
     }
 }
 
@@ -64,7 +73,7 @@ impl Instance {
             return Some(field.clone());
         }
 
-        if let Some(method) = self_.class.class_methods.get(&name.lexeme) {
+        if let Some(method) = self_.class.methods.get(&name.lexeme) {
             return Some(Value::Callable(Rc::new(method.bind(instance.clone()))));
         }
 
