@@ -114,7 +114,33 @@ impl Interpreter {
                 let new_env = Environment::new_with_enclosing(Some(self.environment.clone()));
                 self.execute_block_with_env(stmts, Rc::new(RefCell::new(new_env)))
             }
-            Stmt::Class(name, methods) => {
+            Stmt::Class(name, methods, super_class) => {
+                let superclass = if let Some(class) = super_class {
+                    let superclass_name = match &class {
+                        Expr::Variable(tok) => tok.clone(),
+                        _ => unreachable!(),
+                    };
+
+                    let super_class = match self.expr(class) {
+                        Ok(val) => val,
+                        Err(e) => {
+                            return Err(Signal::RuntimeError(e));
+                        }
+                    };
+
+                    match super_class {
+                        Value::Class(c) => Some(c),
+                        _ => {
+                            let msg = "Superclass must be a class.";
+                            runtime_error(Some(&superclass_name), msg);
+                            self.had_runtime_error = true;
+                            return Err(Signal::RuntimeError(anyhow::anyhow!(msg)));
+                        }
+                    }
+                } else {
+                    None
+                };
+
                 self.environment
                     .borrow_mut()
                     .define(name.lexeme.clone(), None);
@@ -138,6 +164,7 @@ impl Interpreter {
                 let class = Rc::new(Class {
                     class_name: name.lexeme.clone(),
                     methods: class_methods,
+                    superclass,
                 });
                 self.environment
                     .borrow_mut()
@@ -371,12 +398,8 @@ impl Interpreter {
             (TokenType::BangEqual, Value::Callable(f), Value::Callable(g)) => {
                 Value::Bool(f.name() != g.name())
             }
-            (TokenType::BangEqual, Value::Class(x), Value::Class(y)) => {
-                Value::Bool(x != y)
-            }
-            (TokenType::BangEqual, Value::Instance(x), Value::Instance(y)) => {
-                Value::Bool(x != y)
-            }
+            (TokenType::BangEqual, Value::Class(x), Value::Class(y)) => Value::Bool(x != y),
+            (TokenType::BangEqual, Value::Instance(x), Value::Instance(y)) => Value::Bool(x != y),
             (TokenType::BangEqual, _, _) => Value::Bool(true),
             (TokenType::EqualEqual, Value::Number(left), Value::Number(right)) => {
                 Value::Bool(*left == *right)
@@ -391,12 +414,8 @@ impl Interpreter {
             (TokenType::EqualEqual, Value::Callable(f), Value::Callable(g)) => {
                 Value::Bool(f.name() == g.name())
             }
-            (TokenType::EqualEqual, Value::Class(x), Value::Class(y)) => {
-                Value::Bool(x == y)
-            }
-            (TokenType::EqualEqual, Value::Instance(x), Value::Instance(y)) => {
-                Value::Bool(x == y)
-            }
+            (TokenType::EqualEqual, Value::Class(x), Value::Class(y)) => Value::Bool(x == y),
+            (TokenType::EqualEqual, Value::Instance(x), Value::Instance(y)) => Value::Bool(x == y),
             (TokenType::EqualEqual, _, _) => Value::Bool(false),
             (
                 TokenType::Minus

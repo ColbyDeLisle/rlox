@@ -92,6 +92,13 @@ impl<'source> Parser<'source> {
         self.consume(Identifier, "Expect class name.")?;
         let name = self.previous.clone();
 
+        let superclass = if self.matches(&[Less]) {
+            self.consume(Identifier, "Expect superclass name.")?;
+            Some(Expr::Variable(self.previous.clone()))
+        } else {
+            None
+        };
+
         self.consume(LeftBrace, "Expect '{' before class body.")?;
         let mut methods: Vec<Stmt> = vec![];
         while !self.check(&RightBrace) {
@@ -99,7 +106,7 @@ impl<'source> Parser<'source> {
         }
         self.consume(RightBrace, "Expect '}' after class body.")?;
 
-        Ok(Stmt::Class(name, methods))
+        Ok(Stmt::Class(name, methods, superclass))
     }
 
     fn fun_decl(&mut self, kind: FunctionKind) -> anyhow::Result<Stmt> {

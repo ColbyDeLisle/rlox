@@ -14,6 +14,7 @@ static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
 pub(super) struct Class {
     pub(super) class_name: String,
     pub(super) methods: HashMap<String, LoxFunction>,
+    pub(super) superclass: Option<Rc<Self>>,
 }
 
 impl Display for Class {
@@ -59,7 +60,7 @@ impl LoxCallable for Rc<Class> {
 pub(super) struct Instance {
     pub(super) class: Rc<Class>,
     pub(super) fields: HashMap<String, Value>,
-    id: usize
+    id: usize,
 }
 
 impl Instance {
