@@ -6,11 +6,14 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
 
 #[derive(Debug, Clone)]
-pub(crate) struct Class {
-    pub(crate) class_name: String,
-    pub(crate) methods: HashMap<String, LoxFunction>,
+pub(super) struct Class {
+    pub(super) class_name: String,
+    pub(super) methods: HashMap<String, LoxFunction>,
 }
 
 impl Display for Class {
@@ -53,20 +56,22 @@ impl LoxCallable for Rc<Class> {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Instance {
-    pub(crate) class: Rc<Class>,
-    pub(crate) fields: HashMap<String, Value>,
+pub(super) struct Instance {
+    pub(super) class: Rc<Class>,
+    pub(super) fields: HashMap<String, Value>,
+    id: usize
 }
 
 impl Instance {
-    pub(crate) fn new(class: Rc<Class>) -> Self {
+    pub(super) fn new(class: Rc<Class>) -> Self {
         Self {
             class,
             fields: HashMap::new(),
+            id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
         }
     }
 
-    pub(crate) fn get(instance: Rc<RefCell<Instance>>, name: &Token) -> Option<Value> {
+    pub(super) fn get(instance: Rc<RefCell<Instance>>, name: &Token) -> Option<Value> {
         let self_ = instance.borrow();
 
         if let Some(field) = self_.fields.get(&name.lexeme) {
@@ -80,7 +85,7 @@ impl Instance {
         None
     }
 
-    pub(crate) fn set(&mut self, name: &Token, value: Value) {
+    pub(super) fn set(&mut self, name: &Token, value: Value) {
         self.fields.insert(name.lexeme.to_owned(), value);
     }
 }
@@ -90,3 +95,11 @@ impl Display for Instance {
         write!(f, "{} instance", self.class.class_name)
     }
 }
+
+impl PartialEq for Instance {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for Instance {}

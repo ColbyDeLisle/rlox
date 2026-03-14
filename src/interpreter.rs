@@ -368,6 +368,15 @@ impl Interpreter {
                 Value::Bool(*left != *right)
             }
             (TokenType::BangEqual, Value::Nil, Value::Nil) => Value::Bool(false),
+            (TokenType::BangEqual, Value::Callable(f), Value::Callable(g)) => {
+                Value::Bool(f.name() != g.name())
+            }
+            (TokenType::BangEqual, Value::Class(x), Value::Class(y)) => {
+                Value::Bool(x != y)
+            }
+            (TokenType::BangEqual, Value::Instance(x), Value::Instance(y)) => {
+                Value::Bool(x != y)
+            }
             (TokenType::BangEqual, _, _) => Value::Bool(true),
             (TokenType::EqualEqual, Value::Number(left), Value::Number(right)) => {
                 Value::Bool(*left == *right)
@@ -379,6 +388,15 @@ impl Interpreter {
                 Value::Bool(*left == *right)
             }
             (TokenType::EqualEqual, Value::Nil, Value::Nil) => Value::Bool(true),
+            (TokenType::EqualEqual, Value::Callable(f), Value::Callable(g)) => {
+                Value::Bool(f.name() == g.name())
+            }
+            (TokenType::EqualEqual, Value::Class(x), Value::Class(y)) => {
+                Value::Bool(x == y)
+            }
+            (TokenType::EqualEqual, Value::Instance(x), Value::Instance(y)) => {
+                Value::Bool(x == y)
+            }
             (TokenType::EqualEqual, _, _) => Value::Bool(false),
             (
                 TokenType::Minus
