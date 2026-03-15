@@ -50,11 +50,19 @@ impl Resolver {
 
     /// Resolve symbols in a sequence of statements, updating the interpreter with the results.
     pub(crate) fn resolve(&mut self, stmts: &[Stmt]) -> anyhow::Result<()> {
+        let mut had_error = false;
+
         for stmt in stmts {
-            self.resolve_stmt(stmt)?;
+            if self.resolve_stmt(stmt).is_err() {
+                had_error = true;
+            }
         }
 
-        Ok(())
+        if had_error {
+            Err(anyhow::anyhow!("Resolution errors found."))
+        } else {
+            Ok(())
+        }
     }
 
     fn resolve_stmt(&mut self, stmt: &Stmt) -> anyhow::Result<()> {
