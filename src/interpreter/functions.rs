@@ -57,7 +57,7 @@ impl LoxCallable for LoxFunction {
                 } else {
                     Ok(Value::Nil)
                 }
-            },
+            }
             Err(Signal::Return(val)) => {
                 if self.is_initializer {
                     let this_token = Token::new(TokenType::This, "this".to_string(), None, 0);

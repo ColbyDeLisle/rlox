@@ -180,7 +180,8 @@ impl Interpreter {
                     superclass,
                 });
 
-                let result = self.environment
+                let result = self
+                    .environment
                     .borrow_mut()
                     .assign(&name, Value::Class(class));
 
@@ -580,7 +581,7 @@ impl Interpreter {
             _ => unreachable!(),
         };
 
-        let method = superclass.methods.get(supr.method.lexeme.as_str());
+        let method = superclass.find_method(supr.method.lexeme.as_str());
 
         if let Some(method) = method {
             Ok(Value::Callable(Rc::new(method.bind(object))))

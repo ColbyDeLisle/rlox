@@ -275,8 +275,9 @@ impl<'source> Parser<'source> {
     fn error(&mut self, message: &str, token: Option<&Token>) {
         if let Some(tok) = token {
             compile_time_error(Some(tok), message);
-        } else
-        { compile_time_error(Some(&self.previous), message); }
+        } else {
+            compile_time_error(Some(&self.previous), message);
+        }
         self.had_error = true;
     }
 

@@ -17,6 +17,18 @@ pub(super) struct Class {
     pub(super) superclass: Option<Rc<Self>>,
 }
 
+impl Class {
+    pub(super) fn find_method(&self, name: &str) -> Option<LoxFunction> {
+        if let Some(method) = self.methods.get(name) {
+            return Some(method.clone());
+        } else if let Some(superclass) = &self.superclass {
+            return superclass.find_method(name);
+        }
+
+        None
+    }
+}
+
 impl Display for Class {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.class_name)
