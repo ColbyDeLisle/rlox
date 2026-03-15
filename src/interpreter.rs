@@ -180,9 +180,14 @@ impl Interpreter {
                     superclass,
                 });
 
-                self.environment
+                let result = self.environment
                     .borrow_mut()
                     .assign(&name, Value::Class(class));
+
+                if result.is_err() {
+                    self.had_runtime_error = true;
+                    return Err(Signal::RuntimeError(anyhow::anyhow!("")));
+                }
 
                 Ok(Value::Nil)
             }

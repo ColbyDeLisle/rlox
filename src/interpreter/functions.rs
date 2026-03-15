@@ -50,7 +50,14 @@ impl LoxCallable for LoxFunction {
         let body_result = interpreter.execute_block_with_env(self.body.clone(), env);
         match body_result {
             // n.b. we return Nil from a successful function call w/o an explicit `return`
-            Ok(_) => Ok(Value::Nil),
+            Ok(_) => {
+                if self.is_initializer {
+                    let this_token = Token::new(TokenType::This, "this".to_string(), None, 0);
+                    Ok(Environment::get_at(self.closure.clone(), 0, &this_token)?)
+                } else {
+                    Ok(Value::Nil)
+                }
+            },
             Err(Signal::Return(val)) => {
                 if self.is_initializer {
                     let this_token = Token::new(TokenType::This, "this".to_string(), None, 0);
