@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use crate::runtime_error;
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
 
@@ -67,6 +68,17 @@ impl LoxCallable for Rc<Class> {
         if let Some(initializer) = self.find_method("init") {
             let init = LoxFunction::bind(&initializer, instance.clone());
             init.call(interpreter, args, paren_token)?;
+        } else {
+            // still need to check arity, to "call" the default initializer
+            if args.len() != self.arity() {
+                let msg = format!(
+                    "Expected {} arguments but got {}.",
+                    self.arity(),
+                    args.len(),
+                );
+                runtime_error(Some(paren_token), &msg);
+                anyhow::bail!(msg)
+            }
         }
 
         Ok(Value::Instance(instance))
