@@ -96,12 +96,12 @@ impl Instance {
             return Some(field.clone());
         }
 
-        if let Some(method) = self_.class.methods.get(&name.lexeme) {
+        if let Some(method) = self_.class.find_method(&name.lexeme) {
             return Some(Value::Callable(Rc::new(method.bind(instance.clone()))));
         }
 
         if let Some(superclass) = self_.class.superclass.clone() {
-            if let Some(method) = superclass.methods.get(&name.lexeme) {
+            if let Some(method) = superclass.find_method(&name.lexeme) {
                 return Some(Value::Callable(Rc::new(method.bind(instance.clone()))));
             }
         }
