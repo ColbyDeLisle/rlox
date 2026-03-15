@@ -500,13 +500,6 @@ impl Interpreter {
 
             f.call(self, &args)
         } else if let Value::Class(f) = callee {
-            if args.len() != f.arity() {
-                let msg = format!("Expected {} arguments but got {}.", f.arity(), args.len(),);
-                runtime_error(Some(&call.paren.clone()), &msg);
-                self.had_runtime_error = true;
-                anyhow::bail!(msg)
-            }
-
             f.call(self, &args)
         } else {
             let msg = "Can only call functions and classes.";

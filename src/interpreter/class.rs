@@ -59,8 +59,8 @@ impl LoxCallable for Rc<Class> {
     fn call(&self, interpreter: &mut Interpreter, args: &[Value]) -> anyhow::Result<Value> {
         let instance = Rc::new(RefCell::new(Instance::new(self.clone())));
 
-        if let Some(initializer) = self.methods.get("init") {
-            let init = LoxFunction::bind(initializer, instance.clone());
+        if let Some(initializer) = self.find_method("init") {
+            let init = LoxFunction::bind(&initializer, instance.clone());
             init.call(interpreter, args)?;
         }
 
