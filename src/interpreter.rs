@@ -44,7 +44,7 @@ impl Interpreter {
         let env = Rc::new(RefCell::new(Environment::default()));
         env.borrow_mut().define(
             String::from("clock"),
-            Some(Value::Callable(Rc::new(Clock {}))),
+            Some(Value::NativeFunction(Rc::new(Clock {}))),
         );
 
         Interpreter {
@@ -410,9 +410,7 @@ impl Interpreter {
                 Value::Bool(*left != *right)
             }
             (TokenType::BangEqual, Value::Nil, Value::Nil) => Value::Bool(false),
-            (TokenType::BangEqual, Value::Callable(f), Value::Callable(g)) => {
-                Value::Bool(f.name() != g.name())
-            }
+            (TokenType::BangEqual, Value::Callable(f), Value::Callable(g)) => Value::Bool(f != g),
             (TokenType::BangEqual, Value::Class(x), Value::Class(y)) => Value::Bool(x != y),
             (TokenType::BangEqual, Value::Instance(x), Value::Instance(y)) => Value::Bool(x != y),
             (TokenType::BangEqual, _, _) => Value::Bool(true),
@@ -426,9 +424,7 @@ impl Interpreter {
                 Value::Bool(*left == *right)
             }
             (TokenType::EqualEqual, Value::Nil, Value::Nil) => Value::Bool(true),
-            (TokenType::EqualEqual, Value::Callable(f), Value::Callable(g)) => {
-                Value::Bool(f.name() == g.name())
-            }
+            (TokenType::EqualEqual, Value::Callable(f), Value::Callable(g)) => Value::Bool(f == g),
             (TokenType::EqualEqual, Value::Class(x), Value::Class(y)) => Value::Bool(x == y),
             (TokenType::EqualEqual, Value::Instance(x), Value::Instance(y)) => Value::Bool(x == y),
             (TokenType::EqualEqual, _, _) => Value::Bool(false),

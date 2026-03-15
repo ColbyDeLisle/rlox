@@ -2,7 +2,7 @@ use crate::interpreter::value::Value;
 use crate::{Token, runtime_error};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(super) struct Environment {
     pub(super) enclosing: Option<Rc<RefCell<Environment>>>,
     pub(super) values: HashMap<String, Option<Value>>,

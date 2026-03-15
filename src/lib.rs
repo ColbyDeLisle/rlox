@@ -28,13 +28,27 @@ pub(crate) fn runtime_error(token: Option<&Token>, message: &str) {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Literal {
     Number(f32),
     String(String),
     Bool(bool),
     Nil,
 }
+
+impl PartialEq for Literal {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Literal::Nil, Literal::Nil) => true,
+            (Literal::Bool(a), Literal::Bool(b)) => a == b,
+            (Literal::String(a), Literal::String(b)) => a == b,
+            (Literal::Number(a), Literal::Number(b)) => (a - b).abs() < f32::EPSILON,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for Literal {}
 
 impl Display for Literal {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
