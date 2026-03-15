@@ -124,7 +124,7 @@ impl<'source> Parser<'source> {
 
                 if params.len() >= 255 {
                     let msg = "Can't have more than 255 parameters.";
-                    self.error(msg);
+                    self.error(msg, None);
                     anyhow::bail!(msg.to_string());
                 }
 
@@ -138,7 +138,7 @@ impl<'source> Parser<'source> {
         let body = self.block()?;
         let Stmt::Block(stmts) = body else {
             let msg = "Calling block did not return a Block statement. This should never happen.";
-            self.error(msg);
+            self.error(msg, None);
             anyhow::bail!(msg.to_string());
         };
 
@@ -272,8 +272,11 @@ impl<'source> Parser<'source> {
         Ok(Stmt::Expression(expr))
     }
 
-    fn error(&mut self, message: &str) {
-        compile_time_error(Some(&self.previous), message);
+    fn error(&mut self, message: &str, token: Option<&Token>) {
+        if let Some(tok) = token {
+            compile_time_error(Some(tok), message);
+        } else
+        { compile_time_error(Some(&self.previous), message); }
         self.had_error = true;
     }
 
@@ -330,7 +333,7 @@ impl<'source> Parser<'source> {
                 }
                 _ => {
                     let msg = "Invalid assignment target.";
-                    self.error(msg);
+                    self.error(msg, None);
                     anyhow::bail!(msg);
                 }
             }
@@ -478,7 +481,7 @@ impl<'source> Parser<'source> {
                 args.push(self.expr()?);
                 if args.len() > 255 {
                     let msg = "Can't have more than 255 arguments.";
-                    self.error(msg);
+                    self.error(msg, None);
                     anyhow::bail!(msg);
                 }
             }
@@ -509,7 +512,7 @@ impl<'source> Parser<'source> {
     fn primary(&mut self) -> anyhow::Result<Expr> {
         if self.tokens.peek().is_none() {
             let msg = "Unexpected EOF.";
-            self.error(msg);
+            self.error(msg, None);
             anyhow::bail!(msg);
         }
 
@@ -547,7 +550,7 @@ impl<'source> Parser<'source> {
             }
             _ => {
                 let msg = "Expect expression.";
-                self.error(msg);
+                self.error(msg, None);
                 anyhow::bail!(msg);
             }
         };
@@ -560,8 +563,8 @@ impl<'source> Parser<'source> {
             self.advance();
             Ok(true)
         } else {
-            //self.advance();
-            self.error(message);
+            let tok = self.tokens.peek().cloned();
+            self.error(message, tok.as_ref());
             anyhow::bail!(message.to_string());
         }
     }
