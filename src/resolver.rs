@@ -152,9 +152,11 @@ impl Resolver {
                         anyhow::bail!(msg);
                     }
                     FunctionType::Initializer => {
-                        let msg = "Can't return a value from an initializer.";
-                        compile_time_error(Some(keyword), msg);
-                        anyhow::bail!(msg);
+                        if expr.is_some() {
+                            let msg = "Can't return a value from an initializer.";
+                            compile_time_error(Some(keyword), msg);
+                            anyhow::bail!(msg);
+                        }
                     }
                     _ => {}
                 }
