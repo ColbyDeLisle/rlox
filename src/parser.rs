@@ -560,7 +560,7 @@ impl<'source> Parser<'source> {
             self.advance();
             Ok(true)
         } else {
-            self.advance();
+            //self.advance();
             self.error(message);
             anyhow::bail!(message.to_string());
         }
