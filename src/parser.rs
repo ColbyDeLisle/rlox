@@ -1,7 +1,7 @@
 use crate::expr::{Get, Logical, Set};
 use crate::{
     Literal, compile_time_error,
-    expr::{Assign, Binary, Call, Expr, Grouping, Unary},
+    expr::{Assign, Binary, Call, Expr, Grouping, Super, Unary},
     lexer::Lexer,
     stmt::Stmt,
     tokens::{Token, TokenType, TokenType::*},
@@ -522,6 +522,14 @@ impl<'source> Parser<'source> {
             Nil => Expr::Literal(Literal::Nil),
             Number | String => {
                 Expr::Literal(self.previous.clone().literal.expect("can get literal"))
+            }
+            Super => {
+                let keyword = self.previous.clone();
+                self.consume(Dot, "Expect '.' after 'super'.")?;
+                self.consume(Identifier, "Expect superclass method name.")?;
+                let method = self.previous.clone();
+
+                Expr::Super(Super { keyword, method })
             }
             This => Expr::This(self.previous.clone()),
             Identifier => Expr::Variable(self.previous.clone()),

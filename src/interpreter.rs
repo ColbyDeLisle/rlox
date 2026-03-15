@@ -19,7 +19,7 @@ mod value;
 use value::Value;
 
 mod class;
-use crate::expr::{Get, Set};
+use crate::expr::{Get, Set, Super};
 use class::{Class, Instance};
 
 #[derive(Debug)]
@@ -145,6 +145,14 @@ impl Interpreter {
                     .borrow_mut()
                     .define(name.lexeme.clone(), None);
 
+                if let Some(cls) = superclass.clone() {
+                    let new_env = Environment::new_with_enclosing(Some(self.environment.clone()));
+                    self.environment = Rc::new(RefCell::new(new_env));
+                    self.environment
+                        .borrow_mut()
+                        .define("super".to_string(), Some(Value::Class(cls.clone())));
+                }
+
                 let mut class_methods = HashMap::new();
                 for method in methods {
                     let Stmt::Function(name, params, body) = method else {
@@ -161,11 +169,17 @@ impl Interpreter {
                     class_methods.insert(name.lexeme.clone(), m);
                 }
 
+                if superclass.is_some() {
+                    let enc = self.environment.borrow_mut().enclosing.clone().unwrap();
+                    self.environment = enc;
+                }
+
                 let class = Rc::new(Class {
                     class_name: name.lexeme.clone(),
                     methods: class_methods,
                     superclass,
                 });
+
                 self.environment
                     .borrow_mut()
                     .assign(&name, Value::Class(class));
@@ -268,6 +282,7 @@ impl Interpreter {
             Expr::Literal(literal) => self.literal(literal),
             Expr::Logical(logical) => self.logical(logical),
             Expr::Set(set) => self.set(set),
+            Expr::Super(supr) => self.supr(supr),
             Expr::This(this) => self.this(this),
             Expr::Unary(unary) => self.unary(unary),
             Expr::Variable(token) => self.lookup_var(&token),
@@ -546,6 +561,34 @@ impl Interpreter {
 
     fn this(&mut self, this: Token) -> anyhow::Result<Value> {
         self.lookup_var(&this)
+    }
+
+    fn supr(&mut self, supr: Super) -> anyhow::Result<Value> {
+        let distance = self.locals.get(&supr.keyword).unwrap();
+
+        let superclass =
+            match Environment::get_at(self.environment.clone(), *distance, &supr.keyword)? {
+                Value::Class(c) => c,
+                _ => unreachable!(),
+            };
+
+        let this_token = Token::new(TokenType::This, "this".to_string(), None, 0);
+        let object = Environment::get_at(self.environment.clone(), *distance - 1, &this_token)?;
+        let object = match object {
+            Value::Instance(i) => i,
+            _ => unreachable!(),
+        };
+
+        let method = superclass.methods.get(supr.method.lexeme.as_str());
+
+        if let Some(method) = method {
+            Ok(Value::Callable(Rc::new(method.bind(object))))
+        } else {
+            let msg = format!("Undefined property '{}'.", supr.method.lexeme);
+            runtime_error(Some(&supr.method), msg.as_str());
+            self.had_runtime_error = true;
+            anyhow::bail!(msg);
+        }
     }
 
     pub(crate) fn resolve(&mut self, name: Token, depth: usize) {

@@ -22,6 +22,7 @@ enum FunctionType {
 enum ClassType {
     None,
     Class,
+    SubClass,
 }
 
 /// The Lox resolver.
@@ -82,7 +83,14 @@ impl Resolver {
                         _ => unreachable!(),
                     }
 
+                    self.current_class_type = ClassType::SubClass;
                     self.resolve_expr(class)?;
+
+                    self.begin_scope();
+                    self.scopes
+                        .last_mut()
+                        .unwrap()
+                        .insert("super".to_string(), SymbolState::Resolved);
                 }
 
                 self.begin_scope();
@@ -106,6 +114,10 @@ impl Resolver {
                 }
 
                 self.end_scope();
+
+                if superclass.is_some() {
+                    self.end_scope();
+                }
 
                 self.current_class_type = enclosing_class_type;
             }
@@ -229,6 +241,21 @@ impl Resolver {
                 self.resolve_expr(set.value.as_ref())?;
                 self.resolve_expr(set.expr.as_ref())?;
             }
+            Expr::Super(supr) => match self.current_class_type {
+                ClassType::None => {
+                    let msg = "Can't use 'super' outside of a class.";
+                    compile_time_error(Some(&supr.keyword), msg);
+                    anyhow::bail!(msg);
+                }
+                ClassType::Class => {
+                    let msg = "Can't use 'super' in a class with no superclass.";
+                    compile_time_error(Some(&supr.keyword), msg);
+                    anyhow::bail!(msg);
+                }
+                ClassType::SubClass => {
+                    self.resolve_local(&supr.keyword);
+                }
+            },
             Expr::This(token) => {
                 if self.current_class_type == ClassType::None {
                     let msg = "Can't use 'this' outside of a class.";

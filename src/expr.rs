@@ -12,6 +12,7 @@ pub enum Expr {
     Literal(Literal),
     Logical(Logical),
     Set(Set),
+    Super(Super),
     This(Token),
     Unary(Unary),
     Variable(Token),
@@ -66,4 +67,10 @@ pub struct Set {
     pub expr: Box<Expr>,
     pub name: Token,
     pub value: Box<Expr>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Super {
+    pub keyword: Token,
+    pub method: Token,
 }
