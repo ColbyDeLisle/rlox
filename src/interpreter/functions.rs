@@ -6,6 +6,7 @@ use std::rc::Rc;
 
 mod native_functions;
 use crate::interpreter::class::Instance;
+use crate::runtime_error;
 use crate::tokens::{Token, TokenType};
 pub(super) use native_functions::Clock;
 
@@ -16,7 +17,12 @@ pub trait LoxCallable: Debug {
     /// Get the arity (i.e., number of arguments) of the callable.
     fn arity(&self) -> usize;
     /// Call the callable with the provided arguments.
-    fn call(&self, interpreter: &mut Interpreter, args: &[Value]) -> anyhow::Result<Value>;
+    fn call(
+        &self,
+        interpreter: &mut Interpreter,
+        args: &[Value],
+        paren_token: &Token,
+    ) -> anyhow::Result<Value>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,7 +43,22 @@ impl LoxCallable for LoxFunction {
         self.params.len()
     }
 
-    fn call(&self, interpreter: &mut Interpreter, args: &[Value]) -> anyhow::Result<Value> {
+    fn call(
+        &self,
+        interpreter: &mut Interpreter,
+        args: &[Value],
+        paren_token: &Token,
+    ) -> anyhow::Result<Value> {
+        if args.len() != self.arity() {
+            let msg = format!(
+                "Expected {} arguments but got {}.",
+                self.arity(),
+                args.len(),
+            );
+            runtime_error(Some(paren_token), &msg);
+            anyhow::bail!(msg)
+        }
+
         let env = Rc::new(RefCell::new(Environment::new_with_enclosing(Some(
             self.closure.clone(),
         ))));

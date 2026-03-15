@@ -489,18 +489,10 @@ impl Interpreter {
             args.push(self.expr(arg)?);
         }
 
-        // TODO: fix duplication here?
         if let Value::Callable(f) = callee {
-            if args.len() != f.arity() {
-                let msg = format!("Expected {} arguments but got {}.", f.arity(), args.len(),);
-                runtime_error(Some(&call.paren.clone()), &msg);
-                self.had_runtime_error = true;
-                anyhow::bail!(msg)
-            }
-
-            f.call(self, &args)
+            f.call(self, &args, &call.paren)
         } else if let Value::Class(f) = callee {
-            f.call(self, &args)
+            f.call(self, &args, &call.paren)
         } else {
             let msg = "Can only call functions and classes.";
             runtime_error(Some(&call.paren.clone()), msg);
