@@ -564,8 +564,8 @@ impl<'source> Parser<'source> {
             self.advance();
             Ok(true)
         } else {
-            let tok = self.tokens.peek().cloned();
-            self.error(message, tok.as_ref());
+            let tok = self.tokens.peek().cloned().unwrap_or(Token::new(EOF, "EOF".to_string(), None, self.previous.line));
+            self.error(message, Some(&tok));
             anyhow::bail!(message.to_string());
         }
     }

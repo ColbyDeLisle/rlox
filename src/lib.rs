@@ -1,5 +1,6 @@
 use std::fmt::{Display, Formatter};
 use tokens::Token;
+use crate::tokens::TokenType;
 
 pub mod expr;
 pub mod interpreter;
@@ -12,7 +13,11 @@ pub mod tokens;
 /// Display a Lox compile-time error to the user.
 pub(crate) fn compile_time_error(token: Option<&Token>, message: &str) {
     if let Some(t) = token {
-        eprintln!("[line {}] Error at '{}': {message}", t.line, t.lexeme);
+        if t.token_type == TokenType::EOF {
+            eprintln!("[line {}] Error at end: {message}", t.line);
+        } else {
+            eprintln!("[line {}] Error at '{}': {message}", t.line, t.lexeme);
+        }
     } else {
         eprintln!("{}", message);
     }
