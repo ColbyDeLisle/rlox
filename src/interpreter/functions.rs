@@ -6,6 +6,7 @@ use std::rc::Rc;
 
 mod native_functions;
 use crate::interpreter::class::Instance;
+use crate::runtime_error;
 use crate::tokens::{Token, TokenType};
 pub(super) use native_functions::Clock;
 
@@ -16,10 +17,15 @@ pub trait LoxCallable: Debug {
     /// Get the arity (i.e., number of arguments) of the callable.
     fn arity(&self) -> usize;
     /// Call the callable with the provided arguments.
-    fn call(&self, interpreter: &mut Interpreter, args: &[Value]) -> anyhow::Result<Value>;
+    fn call(
+        &self,
+        interpreter: &mut Interpreter,
+        args: &[Value],
+        paren_token: &Token,
+    ) -> anyhow::Result<Value>;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct LoxFunction {
     pub(super) name: String,
     pub(super) params: Vec<String>,
@@ -37,7 +43,22 @@ impl LoxCallable for LoxFunction {
         self.params.len()
     }
 
-    fn call(&self, interpreter: &mut Interpreter, args: &[Value]) -> anyhow::Result<Value> {
+    fn call(
+        &self,
+        interpreter: &mut Interpreter,
+        args: &[Value],
+        paren_token: &Token,
+    ) -> anyhow::Result<Value> {
+        if args.len() != self.arity() {
+            let msg = format!(
+                "Expected {} arguments but got {}.",
+                self.arity(),
+                args.len(),
+            );
+            runtime_error(Some(paren_token), &msg);
+            anyhow::bail!(msg)
+        }
+
         let env = Rc::new(RefCell::new(Environment::new_with_enclosing(Some(
             self.closure.clone(),
         ))));
@@ -50,7 +71,14 @@ impl LoxCallable for LoxFunction {
         let body_result = interpreter.execute_block_with_env(self.body.clone(), env);
         match body_result {
             // n.b. we return Nil from a successful function call w/o an explicit `return`
-            Ok(_) => Ok(Value::Nil),
+            Ok(_) => {
+                if self.is_initializer {
+                    let this_token = Token::new(TokenType::This, "this".to_string(), None, 0);
+                    Ok(Environment::get_at(self.closure.clone(), 0, &this_token)?)
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
             Err(Signal::Return(val)) => {
                 if self.is_initializer {
                     let this_token = Token::new(TokenType::This, "this".to_string(), None, 0);

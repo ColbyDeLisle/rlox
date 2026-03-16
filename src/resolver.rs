@@ -22,6 +22,7 @@ enum FunctionType {
 enum ClassType {
     None,
     Class,
+    SubClass,
 }
 
 /// The Lox resolver.
@@ -49,11 +50,19 @@ impl Resolver {
 
     /// Resolve symbols in a sequence of statements, updating the interpreter with the results.
     pub(crate) fn resolve(&mut self, stmts: &[Stmt]) -> anyhow::Result<()> {
+        let mut had_error = false;
+
         for stmt in stmts {
-            self.resolve_stmt(stmt)?;
+            if self.resolve_stmt(stmt).is_err() {
+                had_error = true;
+            }
         }
 
-        Ok(())
+        if had_error {
+            Err(anyhow::anyhow!("Resolution errors found."))
+        } else {
+            Ok(())
+        }
     }
 
     fn resolve_stmt(&mut self, stmt: &Stmt) -> anyhow::Result<()> {
@@ -63,12 +72,34 @@ impl Resolver {
                 self.resolve(stmts)?;
                 self.end_scope();
             }
-            Stmt::Class(name, methods) => {
+            Stmt::Class(name, methods, superclass) => {
                 let enclosing_class_type = self.current_class_type;
                 self.current_class_type = ClassType::Class;
 
                 self.declare(name)?;
                 self.define(name.lexeme.clone());
+
+                if let Some(class) = superclass {
+                    match class {
+                        Expr::Variable(token) => {
+                            if token.lexeme == name.lexeme {
+                                let msg = "A class can't inherit from itself.";
+                                compile_time_error(Some(token), msg);
+                                anyhow::bail!(msg);
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+
+                    self.current_class_type = ClassType::SubClass;
+                    self.resolve_expr(class)?;
+
+                    self.begin_scope();
+                    self.scopes
+                        .last_mut()
+                        .unwrap()
+                        .insert("super".to_string(), SymbolState::Resolved);
+                }
 
                 self.begin_scope();
                 self.scopes
@@ -91,6 +122,10 @@ impl Resolver {
                 }
 
                 self.end_scope();
+
+                if superclass.is_some() {
+                    self.end_scope();
+                }
 
                 self.current_class_type = enclosing_class_type;
             }
@@ -125,9 +160,11 @@ impl Resolver {
                         anyhow::bail!(msg);
                     }
                     FunctionType::Initializer => {
-                        let msg = "Can't return a value from an initializer.";
-                        compile_time_error(Some(keyword), msg);
-                        anyhow::bail!(msg);
+                        if expr.is_some() {
+                            let msg = "Can't return a value from an initializer.";
+                            compile_time_error(Some(keyword), msg);
+                            anyhow::bail!(msg);
+                        }
                     }
                     _ => {}
                 }
@@ -214,6 +251,21 @@ impl Resolver {
                 self.resolve_expr(set.value.as_ref())?;
                 self.resolve_expr(set.expr.as_ref())?;
             }
+            Expr::Super(supr) => match self.current_class_type {
+                ClassType::None => {
+                    let msg = "Can't use 'super' outside of a class.";
+                    compile_time_error(Some(&supr.keyword), msg);
+                    anyhow::bail!(msg);
+                }
+                ClassType::Class => {
+                    let msg = "Can't use 'super' in a class with no superclass.";
+                    compile_time_error(Some(&supr.keyword), msg);
+                    anyhow::bail!(msg);
+                }
+                ClassType::SubClass => {
+                    self.resolve_local(&supr.keyword);
+                }
+            },
             Expr::This(token) => {
                 if self.current_class_type == ClassType::None {
                     let msg = "Can't use 'this' outside of a class.";

@@ -1,7 +1,7 @@
 use crate::expr::{Get, Logical, Set};
 use crate::{
     Literal, compile_time_error,
-    expr::{Assign, Binary, Call, Expr, Grouping, Unary},
+    expr::{Assign, Binary, Call, Expr, Grouping, Super, Unary},
     lexer::Lexer,
     stmt::Stmt,
     tokens::{Token, TokenType, TokenType::*},
@@ -92,6 +92,13 @@ impl<'source> Parser<'source> {
         self.consume(Identifier, "Expect class name.")?;
         let name = self.previous.clone();
 
+        let superclass = if self.matches(&[Less]) {
+            self.consume(Identifier, "Expect superclass name.")?;
+            Some(Expr::Variable(self.previous.clone()))
+        } else {
+            None
+        };
+
         self.consume(LeftBrace, "Expect '{' before class body.")?;
         let mut methods: Vec<Stmt> = vec![];
         while !self.check(&RightBrace) {
@@ -99,7 +106,7 @@ impl<'source> Parser<'source> {
         }
         self.consume(RightBrace, "Expect '}' after class body.")?;
 
-        Ok(Stmt::Class(name, methods))
+        Ok(Stmt::Class(name, methods, superclass))
     }
 
     fn fun_decl(&mut self, kind: FunctionKind) -> anyhow::Result<Stmt> {
@@ -117,7 +124,7 @@ impl<'source> Parser<'source> {
 
                 if params.len() >= 255 {
                     let msg = "Can't have more than 255 parameters.";
-                    self.error(msg);
+                    self.error(msg, None);
                     anyhow::bail!(msg.to_string());
                 }
 
@@ -131,7 +138,7 @@ impl<'source> Parser<'source> {
         let body = self.block()?;
         let Stmt::Block(stmts) = body else {
             let msg = "Calling block did not return a Block statement. This should never happen.";
-            self.error(msg);
+            self.error(msg, None);
             anyhow::bail!(msg.to_string());
         };
 
@@ -265,8 +272,12 @@ impl<'source> Parser<'source> {
         Ok(Stmt::Expression(expr))
     }
 
-    fn error(&mut self, message: &str) {
-        compile_time_error(Some(&self.previous), message);
+    fn error(&mut self, message: &str, token: Option<&Token>) {
+        if let Some(tok) = token {
+            compile_time_error(Some(tok), message);
+        } else {
+            compile_time_error(Some(&self.previous), message);
+        }
         self.had_error = true;
     }
 
@@ -323,7 +334,7 @@ impl<'source> Parser<'source> {
                 }
                 _ => {
                     let msg = "Invalid assignment target.";
-                    self.error(msg);
+                    self.error(msg, None);
                     anyhow::bail!(msg);
                 }
             }
@@ -471,7 +482,7 @@ impl<'source> Parser<'source> {
                 args.push(self.expr()?);
                 if args.len() > 255 {
                     let msg = "Can't have more than 255 arguments.";
-                    self.error(msg);
+                    self.error(msg, None);
                     anyhow::bail!(msg);
                 }
             }
@@ -502,7 +513,7 @@ impl<'source> Parser<'source> {
     fn primary(&mut self) -> anyhow::Result<Expr> {
         if self.tokens.peek().is_none() {
             let msg = "Unexpected EOF.";
-            self.error(msg);
+            self.error(msg, None);
             anyhow::bail!(msg);
         }
 
@@ -515,6 +526,14 @@ impl<'source> Parser<'source> {
             Nil => Expr::Literal(Literal::Nil),
             Number | String => {
                 Expr::Literal(self.previous.clone().literal.expect("can get literal"))
+            }
+            Super => {
+                let keyword = self.previous.clone();
+                self.consume(Dot, "Expect '.' after 'super'.")?;
+                self.consume(Identifier, "Expect superclass method name.")?;
+                let method = self.previous.clone();
+
+                Expr::Super(Super { keyword, method })
             }
             This => Expr::This(self.previous.clone()),
             Identifier => Expr::Variable(self.previous.clone()),
@@ -532,7 +551,7 @@ impl<'source> Parser<'source> {
             }
             _ => {
                 let msg = "Expect expression.";
-                self.error(msg);
+                self.error(msg, None);
                 anyhow::bail!(msg);
             }
         };
@@ -545,8 +564,8 @@ impl<'source> Parser<'source> {
             self.advance();
             Ok(true)
         } else {
-            self.advance();
-            self.error(message);
+            let tok = self.tokens.peek().cloned().unwrap_or(Token::new(EOF, "EOF".to_string(), None, self.previous.line));
+            self.error(message, Some(&tok));
             anyhow::bail!(message.to_string());
         }
     }

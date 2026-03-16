@@ -1,5 +1,5 @@
 use super::class::{Class, Instance};
-use crate::interpreter::functions::LoxCallable;
+use crate::interpreter::functions::{LoxCallable, LoxFunction};
 use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
@@ -14,7 +14,9 @@ pub enum Value {
     /// A Lox Boolean.
     Bool(bool),
     /// A Lox callable.
-    Callable(Rc<dyn LoxCallable>),
+    Callable(Rc<LoxFunction>),
+    /// A native Lox function.
+    NativeFunction(Rc<dyn LoxCallable>),
     /// A Lox class.
     Class(Rc<Class>),
     /// An instance of a Lox class.
@@ -26,16 +28,18 @@ pub enum Value {
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Value::Number(a), Value::Number(b)) => *a == *b,
+            (Value::Number(a), Value::Number(b)) => (*a - *b).abs() < f32::EPSILON,
             (Value::String(a), Value::String(b)) => *a == *b,
             (Value::Bool(a), Value::Bool(b)) => *a == *b,
             (Value::Nil, Value::Nil) => true,
-            (Value::Callable(f), Value::Callable(g)) => f.name() == g.name(),
+            (Value::Callable(f), Value::Callable(g)) => f == g,
             (Value::Class(c), Value::Class(d)) => c.class_name == d.class_name,
             _ => false,
         }
     }
 }
+
+impl Eq for Value {}
 
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -50,13 +54,8 @@ impl Display for Value {
             Value::String(s) => write!(f, "{}", s),
             Value::Bool(b) => write!(f, "{}", b),
             Value::Nil => write!(f, "nil"),
-            Value::Callable(c) => {
-                if c.name().is_empty() {
-                    write!(f, "<native fn>")
-                } else {
-                    write!(f, "<fn {}>", c.name())
-                }
-            }
+            Value::Callable(c) => write!(f, "<fn {}>", c.name()),
+            Value::NativeFunction(_) => write!(f, "<native fn>"),
             Value::Class(c) => {
                 write!(f, "{c}")
             }

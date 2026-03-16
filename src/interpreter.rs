@@ -19,7 +19,7 @@ mod value;
 use value::Value;
 
 mod class;
-use crate::expr::{Get, Set};
+use crate::expr::{Get, Set, Super};
 use class::{Class, Instance};
 
 #[derive(Debug)]
@@ -44,7 +44,7 @@ impl Interpreter {
         let env = Rc::new(RefCell::new(Environment::default()));
         env.borrow_mut().define(
             String::from("clock"),
-            Some(Value::Callable(Rc::new(Clock {}))),
+            Some(Value::NativeFunction(Rc::new(Clock {}))),
         );
 
         Interpreter {
@@ -114,10 +114,44 @@ impl Interpreter {
                 let new_env = Environment::new_with_enclosing(Some(self.environment.clone()));
                 self.execute_block_with_env(stmts, Rc::new(RefCell::new(new_env)))
             }
-            Stmt::Class(name, methods) => {
+            Stmt::Class(name, methods, super_class) => {
+                let superclass = if let Some(class) = super_class {
+                    let superclass_name = match &class {
+                        Expr::Variable(tok) => tok.clone(),
+                        _ => unreachable!(),
+                    };
+
+                    let super_class = match self.expr(class) {
+                        Ok(val) => val,
+                        Err(e) => {
+                            return Err(Signal::RuntimeError(e));
+                        }
+                    };
+
+                    match super_class {
+                        Value::Class(c) => Some(c),
+                        _ => {
+                            let msg = "Superclass must be a class.";
+                            runtime_error(Some(&superclass_name), msg);
+                            self.had_runtime_error = true;
+                            return Err(Signal::RuntimeError(anyhow::anyhow!(msg)));
+                        }
+                    }
+                } else {
+                    None
+                };
+
                 self.environment
                     .borrow_mut()
                     .define(name.lexeme.clone(), None);
+
+                if let Some(cls) = superclass.clone() {
+                    let new_env = Environment::new_with_enclosing(Some(self.environment.clone()));
+                    self.environment = Rc::new(RefCell::new(new_env));
+                    self.environment
+                        .borrow_mut()
+                        .define("super".to_string(), Some(Value::Class(cls.clone())));
+                }
 
                 let mut class_methods = HashMap::new();
                 for method in methods {
@@ -135,13 +169,26 @@ impl Interpreter {
                     class_methods.insert(name.lexeme.clone(), m);
                 }
 
+                if superclass.is_some() {
+                    let enc = self.environment.borrow_mut().enclosing.clone().unwrap();
+                    self.environment = enc;
+                }
+
                 let class = Rc::new(Class {
                     class_name: name.lexeme.clone(),
                     methods: class_methods,
+                    superclass,
                 });
-                self.environment
+
+                let result = self
+                    .environment
                     .borrow_mut()
                     .assign(&name, Value::Class(class));
+
+                if result.is_err() {
+                    self.had_runtime_error = true;
+                    return Err(Signal::RuntimeError(anyhow::anyhow!("")));
+                }
 
                 Ok(Value::Nil)
             }
@@ -241,6 +288,7 @@ impl Interpreter {
             Expr::Literal(literal) => self.literal(literal),
             Expr::Logical(logical) => self.logical(logical),
             Expr::Set(set) => self.set(set),
+            Expr::Super(supr) => self.supr(supr),
             Expr::This(this) => self.this(this),
             Expr::Unary(unary) => self.unary(unary),
             Expr::Variable(token) => self.lookup_var(&token),
@@ -368,15 +416,9 @@ impl Interpreter {
                 Value::Bool(*left != *right)
             }
             (TokenType::BangEqual, Value::Nil, Value::Nil) => Value::Bool(false),
-            (TokenType::BangEqual, Value::Callable(f), Value::Callable(g)) => {
-                Value::Bool(f.name() != g.name())
-            }
-            (TokenType::BangEqual, Value::Class(x), Value::Class(y)) => {
-                Value::Bool(x != y)
-            }
-            (TokenType::BangEqual, Value::Instance(x), Value::Instance(y)) => {
-                Value::Bool(x != y)
-            }
+            (TokenType::BangEqual, Value::Callable(f), Value::Callable(g)) => Value::Bool(f != g),
+            (TokenType::BangEqual, Value::Class(x), Value::Class(y)) => Value::Bool(x != y),
+            (TokenType::BangEqual, Value::Instance(x), Value::Instance(y)) => Value::Bool(x != y),
             (TokenType::BangEqual, _, _) => Value::Bool(true),
             (TokenType::EqualEqual, Value::Number(left), Value::Number(right)) => {
                 Value::Bool(*left == *right)
@@ -388,15 +430,9 @@ impl Interpreter {
                 Value::Bool(*left == *right)
             }
             (TokenType::EqualEqual, Value::Nil, Value::Nil) => Value::Bool(true),
-            (TokenType::EqualEqual, Value::Callable(f), Value::Callable(g)) => {
-                Value::Bool(f.name() == g.name())
-            }
-            (TokenType::EqualEqual, Value::Class(x), Value::Class(y)) => {
-                Value::Bool(x == y)
-            }
-            (TokenType::EqualEqual, Value::Instance(x), Value::Instance(y)) => {
-                Value::Bool(x == y)
-            }
+            (TokenType::EqualEqual, Value::Callable(f), Value::Callable(g)) => Value::Bool(f == g),
+            (TokenType::EqualEqual, Value::Class(x), Value::Class(y)) => Value::Bool(x == y),
+            (TokenType::EqualEqual, Value::Instance(x), Value::Instance(y)) => Value::Bool(x == y),
             (TokenType::EqualEqual, _, _) => Value::Bool(false),
             (
                 TokenType::Minus
@@ -453,25 +489,10 @@ impl Interpreter {
             args.push(self.expr(arg)?);
         }
 
-        // TODO: fix duplication here?
         if let Value::Callable(f) = callee {
-            if args.len() != f.arity() {
-                let msg = format!("Expected {} arguments but got {}.", f.arity(), args.len(),);
-                runtime_error(Some(&call.paren.clone()), &msg);
-                self.had_runtime_error = true;
-                anyhow::bail!(msg)
-            }
-
-            f.call(self, &args)
+            f.call(self, &args, &call.paren)
         } else if let Value::Class(f) = callee {
-            if args.len() != f.arity() {
-                let msg = format!("Expected {} arguments but got {}.", f.arity(), args.len(),);
-                runtime_error(Some(&call.paren.clone()), &msg);
-                self.had_runtime_error = true;
-                anyhow::bail!(msg)
-            }
-
-            f.call(self, &args)
+            f.call(self, &args, &call.paren)
         } else {
             let msg = "Can only call functions and classes.";
             runtime_error(Some(&call.paren.clone()), msg);
@@ -527,6 +548,34 @@ impl Interpreter {
 
     fn this(&mut self, this: Token) -> anyhow::Result<Value> {
         self.lookup_var(&this)
+    }
+
+    fn supr(&mut self, supr: Super) -> anyhow::Result<Value> {
+        let distance = self.locals.get(&supr.keyword).unwrap();
+
+        let superclass =
+            match Environment::get_at(self.environment.clone(), *distance, &supr.keyword)? {
+                Value::Class(c) => c,
+                _ => unreachable!(),
+            };
+
+        let this_token = Token::new(TokenType::This, "this".to_string(), None, 0);
+        let object = Environment::get_at(self.environment.clone(), *distance - 1, &this_token)?;
+        let object = match object {
+            Value::Instance(i) => i,
+            _ => unreachable!(),
+        };
+
+        let method = superclass.find_method(supr.method.lexeme.as_str());
+
+        if let Some(method) = method {
+            Ok(Value::Callable(Rc::new(method.bind(object))))
+        } else {
+            let msg = format!("Undefined property '{}'.", supr.method.lexeme);
+            runtime_error(Some(&supr.method), msg.as_str());
+            self.had_runtime_error = true;
+            anyhow::bail!(msg);
+        }
     }
 
     pub(crate) fn resolve(&mut self, name: Token, depth: usize) {

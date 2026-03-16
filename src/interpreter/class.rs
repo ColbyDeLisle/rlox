@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use crate::runtime_error;
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
 
@@ -14,6 +15,19 @@ static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
 pub(super) struct Class {
     pub(super) class_name: String,
     pub(super) methods: HashMap<String, LoxFunction>,
+    pub(super) superclass: Option<Rc<Self>>,
+}
+
+impl Class {
+    pub(super) fn find_method(&self, name: &str) -> Option<LoxFunction> {
+        if let Some(method) = self.methods.get(name) {
+            return Some(method.clone());
+        } else if let Some(superclass) = &self.superclass {
+            return superclass.find_method(name);
+        }
+
+        None
+    }
 }
 
 impl Display for Class {
@@ -43,12 +57,28 @@ impl LoxCallable for Rc<Class> {
         }
     }
 
-    fn call(&self, interpreter: &mut Interpreter, args: &[Value]) -> anyhow::Result<Value> {
+    fn call(
+        &self,
+        interpreter: &mut Interpreter,
+        args: &[Value],
+        paren_token: &Token,
+    ) -> anyhow::Result<Value> {
         let instance = Rc::new(RefCell::new(Instance::new(self.clone())));
 
-        if let Some(initializer) = self.methods.get("init") {
-            let init = LoxFunction::bind(initializer, instance.clone());
-            init.call(interpreter, args)?;
+        if let Some(initializer) = self.find_method("init") {
+            let init = LoxFunction::bind(&initializer, instance.clone());
+            init.call(interpreter, args, paren_token)?;
+        } else {
+            // still need to check arity, to "call" the default initializer
+            if args.len() != self.arity() {
+                let msg = format!(
+                    "Expected {} arguments but got {}.",
+                    self.arity(),
+                    args.len(),
+                );
+                runtime_error(Some(paren_token), &msg);
+                anyhow::bail!(msg)
+            }
         }
 
         Ok(Value::Instance(instance))
@@ -59,7 +89,7 @@ impl LoxCallable for Rc<Class> {
 pub(super) struct Instance {
     pub(super) class: Rc<Class>,
     pub(super) fields: HashMap<String, Value>,
-    id: usize
+    id: usize,
 }
 
 impl Instance {
@@ -78,8 +108,14 @@ impl Instance {
             return Some(field.clone());
         }
 
-        if let Some(method) = self_.class.methods.get(&name.lexeme) {
+        if let Some(method) = self_.class.find_method(&name.lexeme) {
             return Some(Value::Callable(Rc::new(method.bind(instance.clone()))));
+        }
+
+        if let Some(superclass) = self_.class.superclass.clone() {
+            if let Some(method) = superclass.find_method(&name.lexeme) {
+                return Some(Value::Callable(Rc::new(method.bind(instance.clone()))));
+            }
         }
 
         None
