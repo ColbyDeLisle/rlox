@@ -67,7 +67,7 @@ impl LoxCallable for LoxFunction {
             env.borrow_mut().define(name.clone(), Some(args[i].clone()));
         }
 
-        let body_result = interpreter.execute_block_with_env(self.body.clone(), env);
+        let body_result = interpreter.execute_block_with_env(&self.body, env);
         match body_result {
             // n.b. we return Nil from a successful function call w/o an explicit `return`
             Ok(_) => {

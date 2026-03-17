@@ -61,7 +61,7 @@ impl Interpreter {
             return Err(Signal::ResolveError);
         }
 
-        for stmt in stmts {
+        for stmt in &stmts {
             self.stmt(stmt)?;
         }
 
@@ -71,7 +71,7 @@ impl Interpreter {
         }
     }
 
-    fn stmt(&mut self, stmt: Stmt) -> InterpretResult {
+    fn stmt(&mut self, stmt: &Stmt) -> InterpretResult {
         match stmt {
             Stmt::If(If {
                 condition,
@@ -81,20 +81,19 @@ impl Interpreter {
                 let condition_value = self.expr(condition).map_err(Signal::RuntimeError)?;
 
                 if self.is_truthy(&condition_value) {
-                    self.stmt(*then_branch)?;
+                    self.stmt(then_branch)?;
                 } else if let Some(stmt) = else_branch {
-                    self.stmt(*stmt)?;
+                    self.stmt(stmt)?;
                 }
 
                 Ok(Value::Nil)
             }
             Stmt::While(While { condition, body }) => {
-                let mut condition_value =
-                    self.expr(condition.clone()).map_err(Signal::RuntimeError)?;
+                let mut condition_value = self.expr(condition).map_err(Signal::RuntimeError)?;
 
                 while self.is_truthy(&condition_value) {
-                    self.stmt(*body.clone())?;
-                    condition_value = self.expr(condition.clone()).map_err(Signal::RuntimeError)?;
+                    self.stmt(body)?;
+                    condition_value = self.expr(condition).map_err(Signal::RuntimeError)?;
                 }
 
                 Ok(Value::Nil)
@@ -109,7 +108,7 @@ impl Interpreter {
                 superclass,
             }) => {
                 let superclass = if let Some(class) = superclass {
-                    let superclass_name = match &class {
+                    let superclass_name = match class {
                         Expr::Variable(tok) => tok.clone(),
                         _ => unreachable!(),
                     };
@@ -149,7 +148,7 @@ impl Interpreter {
                     let m = LoxFunction {
                         name: name.lexeme.clone(),
                         params: params.iter().map(|t| t.lexeme.clone()).collect(),
-                        body,
+                        body: body.clone(),
                         closure: self.environment.clone(),
                         is_initializer: name.lexeme == "init",
                     };
@@ -171,7 +170,7 @@ impl Interpreter {
                 let result = self
                     .environment
                     .borrow_mut()
-                    .assign(&name, Value::Class(class));
+                    .assign(name, Value::Class(class));
 
                 if result.is_err() {
                     self.had_runtime_error = true;
@@ -186,7 +185,7 @@ impl Interpreter {
                     None => Some(Value::Nil),
                 };
 
-                self.environment.borrow_mut().define(name.lexeme, value);
+                self.environment.borrow_mut().define(name.lexeme.clone(), value);
 
                 Ok(Value::Nil)
             }
@@ -194,9 +193,9 @@ impl Interpreter {
             Stmt::Print(expr) => self.print_stmt(expr),
             Stmt::Function(Function { name, params, body }) => {
                 let f = LoxFunction {
-                    name: name.lexeme,
+                    name: name.lexeme.clone(),
                     params: params.iter().map(|t| t.lexeme.clone()).collect(),
-                    body,
+                    body: body.clone(),
                     closure: self.environment.clone(),
                     is_initializer: false,
                 };
@@ -219,7 +218,7 @@ impl Interpreter {
 
     fn execute_block_with_env(
         &mut self,
-        stmts: Vec<Stmt>,
+        stmts: &[Stmt],
         env: Rc<RefCell<Environment>>,
     ) -> InterpretResult {
         let old_env = self.environment.clone();
@@ -255,25 +254,25 @@ impl Interpreter {
         }
     }
 
-    fn expr(&mut self, expr: Expr) -> anyhow::Result<Value> {
+    fn expr(&mut self, expr: &Expr) -> anyhow::Result<Value> {
         match expr {
             Expr::Assign(assign) => self.assign(assign),
             Expr::Binary(binary) => self.binary(binary),
             Expr::Call(call) => self.call(call),
             Expr::Get(get) => self.get(get),
-            Expr::Grouping(grouping) => self.expr(*grouping.expression),
+            Expr::Grouping(grouping) => self.expr(&grouping.expression),
             Expr::Literal(literal) => self.literal(literal),
             Expr::Logical(logical) => self.logical(logical),
             Expr::Set(set) => self.set(set),
             Expr::Super(supr) => self.supr(supr),
             Expr::This(this) => self.this(this),
             Expr::Unary(unary) => self.unary(unary),
-            Expr::Variable(token) => self.lookup_var(&token),
+            Expr::Variable(token) => self.lookup_var(token),
         }
     }
 
-    fn assign(&mut self, assign: Assign) -> anyhow::Result<Value> {
-        let value = self.expr(*assign.value)?;
+    fn assign(&mut self, assign: &Assign) -> anyhow::Result<Value> {
+        let value = self.expr(&assign.value)?;
 
         if let Some(distance) = self.locals.get(&assign.name) {
             Environment::assign_at(
@@ -291,18 +290,18 @@ impl Interpreter {
         Ok(value)
     }
 
-    fn literal(&self, literal: Literal) -> anyhow::Result<Value> {
+    fn literal(&self, literal: &Literal) -> anyhow::Result<Value> {
         let value = match literal {
-            Literal::Number(val) => Value::Number(val),
-            Literal::String(val) => Value::String(val),
-            Literal::Bool(val) => Value::Bool(val),
+            Literal::Number(val) => Value::Number(*val),
+            Literal::String(val) => Value::String(val.clone()),
+            Literal::Bool(val) => Value::Bool(*val),
             Literal::Nil => Value::Nil,
         };
         Ok(value)
     }
 
-    fn logical(&mut self, logical: Logical) -> anyhow::Result<Value> {
-        let left = self.expr(*logical.left)?;
+    fn logical(&mut self, logical: &Logical) -> anyhow::Result<Value> {
+        let left = self.expr(&logical.left)?;
 
         match logical.operator.token_type {
             TokenType::Or => {
@@ -318,17 +317,17 @@ impl Interpreter {
             _ => unreachable!(),
         }
 
-        self.expr(*logical.right)
+        self.expr(&logical.right)
     }
 
-    fn unary(&mut self, unary: Unary) -> anyhow::Result<Value> {
-        let right_value = self.expr(*unary.right)?;
+    fn unary(&mut self, unary: &Unary) -> anyhow::Result<Value> {
+        let right_value = self.expr(&unary.right)?;
 
         match (&unary.operator.token_type, right_value) {
             (TokenType::Minus, Value::Number(val)) => Ok(Value::Number(-val)),
             (TokenType::Minus, _) => {
                 let msg = "Operand must be a number.";
-                runtime_error(Some(&unary.operator.clone()), msg);
+                runtime_error(Some(&unary.operator), msg);
                 self.had_runtime_error = true;
                 anyhow::bail!(msg.to_string())
             }
@@ -345,9 +344,9 @@ impl Interpreter {
         }
     }
 
-    fn binary(&mut self, binary: Binary) -> anyhow::Result<Value> {
-        let left_value = self.expr(*binary.left)?;
-        let right_value = self.expr(*binary.right)?;
+    fn binary(&mut self, binary: &Binary) -> anyhow::Result<Value> {
+        let left_value = self.expr(&binary.left)?;
+        let right_value = self.expr(&binary.right)?;
 
         let value = match (&binary.operator.token_type, &left_value, &right_value) {
             (TokenType::Minus, Value::Number(left), Value::Number(right)) => {
@@ -356,7 +355,7 @@ impl Interpreter {
             (TokenType::Slash, Value::Number(left), Value::Number(right)) => match right {
                 0.0 => {
                     let msg = "Division by zero.";
-                    runtime_error(Some(&binary.operator.clone()), msg);
+                    runtime_error(Some(&binary.operator), msg);
                     self.had_runtime_error = true;
                     anyhow::bail!(msg.to_string());
                 }
@@ -423,13 +422,13 @@ impl Interpreter {
                 _,
             ) => {
                 let msg = "Operands must be numbers.";
-                runtime_error(Some(&binary.operator.clone()), msg);
+                runtime_error(Some(&binary.operator), msg);
                 self.had_runtime_error = true;
                 anyhow::bail!(msg.to_string());
             }
             (TokenType::Plus, _, _) => {
                 let msg = "Operands must be two numbers or two strings.";
-                runtime_error(Some(&binary.operator.clone()), msg);
+                runtime_error(Some(&binary.operator), msg);
                 self.had_runtime_error = true;
                 anyhow::bail!(msg.to_string())
             }
@@ -439,21 +438,21 @@ impl Interpreter {
         Ok(value)
     }
 
-    fn expr_stmt(&mut self, expr: Expr) -> InterpretResult {
+    fn expr_stmt(&mut self, expr: &Expr) -> InterpretResult {
         self.expr(expr).map_err(Signal::RuntimeError)
     }
 
-    fn print_stmt(&mut self, expr: Expr) -> InterpretResult {
+    fn print_stmt(&mut self, expr: &Expr) -> InterpretResult {
         let val = self.expr(expr).map_err(Signal::RuntimeError)?;
         println!("{val}");
         Ok(Value::Nil)
     }
 
-    fn call(&mut self, call: Call) -> anyhow::Result<Value> {
-        let callee = self.expr(*call.callee)?;
+    fn call(&mut self, call: &Call) -> anyhow::Result<Value> {
+        let callee = self.expr(&call.callee)?;
         let mut args: Vec<Value> = vec![];
 
-        for arg in call.args {
+        for arg in &call.args {
             args.push(self.expr(arg)?);
         }
 
@@ -462,25 +461,24 @@ impl Interpreter {
             Value::Class(f) => f.call(self, &args, &call.paren),
             _ => {
                 let msg = "Can only call functions and classes.";
-                runtime_error(Some(&call.paren.clone()), msg);
+                runtime_error(Some(&call.paren), msg);
                 self.had_runtime_error = true;
                 anyhow::bail!(msg.to_string())
             }
         }
     }
 
-    fn get(&mut self, get: Get) -> anyhow::Result<Value> {
-        let name = get.name.clone();
-        let object = self.expr(*get.expr)?;
+    fn get(&mut self, get: &Get) -> anyhow::Result<Value> {
+        let object = self.expr(&get.expr)?;
 
         match object {
             Value::Instance(i) => {
-                let value = LoxInstance::get(i.clone(), &name);
+                let value = LoxInstance::get(i.clone(), &get.name);
                 match value {
                     Some(value) => Ok(value),
                     None => {
-                        let msg = format!("Undefined property '{}'.", name.lexeme);
-                        runtime_error(Some(&name.clone()), &msg);
+                        let msg = format!("Undefined property '{}'.", get.name.lexeme);
+                        runtime_error(Some(&get.name), &msg);
                         self.had_runtime_error = true;
                         anyhow::bail!(msg)
                     }
@@ -488,37 +486,36 @@ impl Interpreter {
             }
             _ => {
                 let msg = "Only instances have properties.";
-                runtime_error(Some(&name.clone()), msg);
+                runtime_error(Some(&get.name), msg);
                 self.had_runtime_error = true;
                 anyhow::bail!(msg.to_string());
             }
         }
     }
 
-    fn set(&mut self, set: Set) -> anyhow::Result<Value> {
-        let name = set.name.clone();
-        let object = self.expr(*set.expr)?;
+    fn set(&mut self, set: &Set) -> anyhow::Result<Value> {
+        let object = self.expr(&set.expr)?;
 
         match object {
             Value::Instance(i) => {
-                let value = self.expr(*set.value)?;
-                i.borrow_mut().set(&name, value.clone());
+                let value = self.expr(&set.value)?;
+                i.borrow_mut().set(&set.name, value.clone());
                 Ok(value)
             }
             _ => {
                 let msg = "Only instances have fields.";
-                runtime_error(Some(&name), msg);
+                runtime_error(Some(&set.name), msg);
                 self.had_runtime_error = true;
                 anyhow::bail!(msg.to_string());
             }
         }
     }
 
-    fn this(&mut self, this: Token) -> anyhow::Result<Value> {
-        self.lookup_var(&this)
+    fn this(&mut self, this: &Token) -> anyhow::Result<Value> {
+        self.lookup_var(this)
     }
 
-    fn supr(&mut self, supr: Super) -> anyhow::Result<Value> {
+    fn supr(&mut self, supr: &Super) -> anyhow::Result<Value> {
         // The resolver guarantees that every `super` expression is resolved.
         let distance = self.locals.get(&supr.keyword).unwrap();
 
