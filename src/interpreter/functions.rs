@@ -101,11 +101,8 @@ impl LoxFunction {
             .define("this".to_string(), Some(Value::Instance(instance)));
 
         LoxFunction {
-            name: self.name.clone(),
-            params: self.params.clone(),
-            body: self.body.clone(),
             closure: env,
-            is_initializer: self.is_initializer,
+            ..self.clone()
         }
     }
 }

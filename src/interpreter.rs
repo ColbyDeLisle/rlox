@@ -78,12 +78,7 @@ impl Interpreter {
                 then_branch,
                 else_branch,
             }) => {
-                let condition_value = match self.expr(condition) {
-                    Ok(val) => val,
-                    Err(e) => {
-                        return Err(Signal::RuntimeError(e));
-                    }
-                };
+                let condition_value = self.expr(condition).map_err(Signal::RuntimeError)?;
 
                 if self.is_truthy(&condition_value) {
                     self.stmt(*then_branch)?;
@@ -94,21 +89,12 @@ impl Interpreter {
                 Ok(Value::Nil)
             }
             Stmt::While(While { condition, body }) => {
-                let mut condition_value = match self.expr(condition.clone()) {
-                    Ok(val) => val,
-                    Err(e) => {
-                        return Err(Signal::RuntimeError(e));
-                    }
-                };
+                let mut condition_value =
+                    self.expr(condition.clone()).map_err(Signal::RuntimeError)?;
 
                 while self.is_truthy(&condition_value) {
                     self.stmt(*body.clone())?;
-                    condition_value = match self.expr(condition.clone()) {
-                        Ok(val) => val,
-                        Err(e) => {
-                            return Err(Signal::RuntimeError(e));
-                        }
-                    };
+                    condition_value = self.expr(condition.clone()).map_err(Signal::RuntimeError)?;
                 }
 
                 Ok(Value::Nil)
@@ -128,12 +114,7 @@ impl Interpreter {
                         _ => unreachable!(),
                     };
 
-                    let super_class = match self.expr(class) {
-                        Ok(val) => val,
-                        Err(e) => {
-                            return Err(Signal::RuntimeError(e));
-                        }
-                    };
+                    let super_class = self.expr(class).map_err(Signal::RuntimeError)?;
 
                     match super_class {
                         Value::Class(c) => Some(c),
@@ -201,15 +182,7 @@ impl Interpreter {
             }
             Stmt::Var(Var { name, initializer }) => {
                 let value = match initializer {
-                    Some(expr) => {
-                        let value = match self.expr(expr) {
-                            Ok(val) => val,
-                            Err(e) => {
-                                return Err(Signal::RuntimeError(e));
-                            }
-                        };
-                        Some(value)
-                    }
+                    Some(expr) => Some(self.expr(expr).map_err(Signal::RuntimeError)?),
                     None => Some(Value::Nil),
                 };
 
@@ -236,12 +209,9 @@ impl Interpreter {
             }
             Stmt::Return(Return { value: expr, .. }) => match expr {
                 None => Err(Signal::Return(Value::Nil)),
-                Some(expr_) => {
-                    let value = self.expr(expr_);
-                    match value {
-                        Ok(val) => Err(Signal::Return(val)),
-                        Err(e) => Err(Signal::RuntimeError(e)),
-                    }
+                Some(expr) => {
+                    let val = self.expr(expr).map_err(Signal::RuntimeError)?;
+                    Err(Signal::Return(val))
                 }
             },
         }
@@ -470,22 +440,13 @@ impl Interpreter {
     }
 
     fn expr_stmt(&mut self, expr: Expr) -> InterpretResult {
-        let value = self.expr(expr);
-        match value {
-            Ok(val) => Ok(val),
-            Err(e) => Err(Signal::RuntimeError(e)),
-        }
+        self.expr(expr).map_err(Signal::RuntimeError)
     }
 
     fn print_stmt(&mut self, expr: Expr) -> InterpretResult {
-        let value = self.expr(expr);
-        match value {
-            Ok(val) => {
-                println!("{val}");
-                Ok(Value::Nil)
-            }
-            Err(e) => Err(Signal::RuntimeError(e)),
-        }
+        let val = self.expr(expr).map_err(Signal::RuntimeError)?;
+        println!("{val}");
+        Ok(Value::Nil)
     }
 
     fn call(&mut self, call: Call) -> anyhow::Result<Value> {
@@ -496,15 +457,15 @@ impl Interpreter {
             args.push(self.expr(arg)?);
         }
 
-        if let Value::Callable(f) = callee {
-            f.call(self, &args, &call.paren)
-        } else if let Value::Class(f) = callee {
-            f.call(self, &args, &call.paren)
-        } else {
-            let msg = "Can only call functions and classes.";
-            runtime_error(Some(&call.paren.clone()), msg);
-            self.had_runtime_error = true;
-            anyhow::bail!(msg.to_string())
+        match callee {
+            Value::Callable(f) => f.call(self, &args, &call.paren),
+            Value::Class(f) => f.call(self, &args, &call.paren),
+            _ => {
+                let msg = "Can only call functions and classes.";
+                runtime_error(Some(&call.paren.clone()), msg);
+                self.had_runtime_error = true;
+                anyhow::bail!(msg.to_string())
+            }
         }
     }
 
