@@ -3,7 +3,7 @@ use crate::{
     expr::{Assign, Binary, Call, Expr, Logical, Unary},
     resolver::Resolver,
     runtime_error,
-    stmt::Stmt,
+    stmt::{Class, Function, If, Return, Stmt, Var, While},
     tokens::{Token, TokenType},
 };
 use std::collections::HashMap;
@@ -20,7 +20,7 @@ use value::Value;
 
 mod class;
 use crate::expr::{Get, Set, Super};
-use class::{Class, Instance};
+use class::{LoxClass, LoxInstance};
 
 #[derive(Debug)]
 pub enum Signal {
@@ -73,7 +73,11 @@ impl Interpreter {
 
     fn stmt(&mut self, stmt: Stmt) -> InterpretResult {
         match stmt {
-            Stmt::If(condition, then_branch, else_branch) => {
+            Stmt::If(If {
+                condition,
+                then_branch,
+                else_branch,
+            }) => {
                 let condition_value = match self.expr(condition) {
                     Ok(val) => val,
                     Err(e) => {
@@ -89,7 +93,7 @@ impl Interpreter {
 
                 Ok(Value::Nil)
             }
-            Stmt::While(condition, body) => {
+            Stmt::While(While { condition, body }) => {
                 let mut condition_value = match self.expr(condition.clone()) {
                     Ok(val) => val,
                     Err(e) => {
@@ -113,8 +117,12 @@ impl Interpreter {
                 let new_env = Environment::new_with_enclosing(Some(self.environment.clone()));
                 self.execute_block_with_env(stmts, Rc::new(RefCell::new(new_env)))
             }
-            Stmt::Class(name, methods, super_class) => {
-                let superclass = if let Some(class) = super_class {
+            Stmt::Class(Class {
+                name,
+                methods,
+                superclass,
+            }) => {
+                let superclass = if let Some(class) = superclass {
                     let superclass_name = match &class {
                         Expr::Variable(tok) => tok.clone(),
                         _ => unreachable!(),
@@ -154,7 +162,7 @@ impl Interpreter {
 
                 let mut class_methods = HashMap::new();
                 for method in methods {
-                    let Stmt::Function(name, params, body) = method else {
+                    let Stmt::Function(Function { name, params, body }) = method else {
                         unreachable!()
                     };
                     let m = LoxFunction {
@@ -173,7 +181,7 @@ impl Interpreter {
                     self.environment = enc;
                 }
 
-                let class = Rc::new(Class {
+                let class = Rc::new(LoxClass {
                     class_name: name.lexeme.clone(),
                     methods: class_methods,
                     superclass,
@@ -191,8 +199,8 @@ impl Interpreter {
 
                 Ok(Value::Nil)
             }
-            Stmt::Var(token, expr) => {
-                let value = match expr {
+            Stmt::Var(Var { name, initializer }) => {
+                let value = match initializer {
                     Some(expr) => {
                         let value = match self.expr(expr) {
                             Ok(val) => val,
@@ -205,13 +213,13 @@ impl Interpreter {
                     None => Some(Value::Nil),
                 };
 
-                self.environment.borrow_mut().define(token.lexeme, value);
+                self.environment.borrow_mut().define(name.lexeme, value);
 
                 Ok(Value::Nil)
             }
             Stmt::Expression(expr) => self.expr_stmt(expr),
             Stmt::Print(expr) => self.print_stmt(expr),
-            Stmt::Function(name, params, body) => {
+            Stmt::Function(Function { name, params, body }) => {
                 let f = LoxFunction {
                     name: name.lexeme,
                     params: params.iter().map(|t| t.lexeme.clone()).collect(),
@@ -226,7 +234,7 @@ impl Interpreter {
 
                 Ok(Value::Nil)
             }
-            Stmt::Return(_, expr) => match expr {
+            Stmt::Return(Return { value: expr, .. }) => match expr {
                 None => Err(Signal::Return(Value::Nil)),
                 Some(expr_) => {
                     let value = self.expr(expr_);
@@ -506,7 +514,7 @@ impl Interpreter {
 
         match object {
             Value::Instance(i) => {
-                let value = Instance::get(i.clone(), &name);
+                let value = LoxInstance::get(i.clone(), &name);
                 match value {
                     Some(value) => Ok(value),
                     None => {

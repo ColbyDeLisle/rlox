@@ -1,5 +1,10 @@
 use crate::tokens::Token;
-use crate::{compile_time_error, expr::Expr, interpreter::Interpreter, stmt::Stmt};
+use crate::{
+    compile_time_error,
+    expr::Expr,
+    interpreter::Interpreter,
+    stmt::{Class, Function, If, Return, Stmt, Var, While},
+};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,7 +77,11 @@ impl<'a> Resolver<'a> {
                 self.resolve(stmts)?;
                 self.end_scope();
             }
-            Stmt::Class(name, methods, superclass) => {
+            Stmt::Class(Class {
+                name,
+                methods,
+                superclass,
+            }) => {
                 let enclosing_class_type = self.current_class_type;
                 self.current_class_type = ClassType::Class;
 
@@ -108,7 +117,12 @@ impl<'a> Resolver<'a> {
                     .insert("this".to_string(), SymbolState::Resolved);
 
                 for method in methods {
-                    let Stmt::Function(token, params, body) = method else {
+                    let Stmt::Function(Function {
+                        name: token,
+                        params,
+                        body,
+                    }) = method
+                    else {
                         unreachable!();
                     };
 
@@ -129,30 +143,34 @@ impl<'a> Resolver<'a> {
 
                 self.current_class_type = enclosing_class_type;
             }
-            Stmt::Var(token, expr) => {
-                self.declare(token)?;
-                if let Some(initializer) = expr {
-                    self.resolve_expr(initializer)?;
+            Stmt::Var(Var { name, initializer }) => {
+                self.declare(name)?;
+                if let Some(expr) = initializer {
+                    self.resolve_expr(expr)?;
                 }
-                self.define(token.lexeme.clone())
+                self.define(name.lexeme.clone())
             }
-            Stmt::Function(token, params, body) => {
-                self.resolve_function(token, params, body, FunctionType::Function)?;
+            Stmt::Function(Function { name, params, body }) => {
+                self.resolve_function(name, params, body, FunctionType::Function)?;
             }
             Stmt::Expression(expr) => {
                 self.resolve_expr(expr)?;
             }
-            Stmt::If(condition, if_body, else_body) => {
+            Stmt::If(If {
+                condition,
+                then_branch,
+                else_branch,
+            }) => {
                 self.resolve_expr(condition)?;
-                self.resolve_stmt(if_body)?;
-                if let Some(stmt) = else_body {
+                self.resolve_stmt(then_branch)?;
+                if let Some(stmt) = else_branch {
                     self.resolve_stmt(stmt)?;
                 }
             }
             Stmt::Print(expr) => {
                 self.resolve_expr(expr)?;
             }
-            Stmt::Return(keyword, expr) => {
+            Stmt::Return(Return { keyword, value }) => {
                 match self.current_function_type {
                     FunctionType::None => {
                         let msg = "Can't return from top-level code.";
@@ -160,7 +178,7 @@ impl<'a> Resolver<'a> {
                         anyhow::bail!(msg);
                     }
                     FunctionType::Initializer => {
-                        if expr.is_some() {
+                        if value.is_some() {
                             let msg = "Can't return a value from an initializer.";
                             compile_time_error(Some(keyword), msg);
                             anyhow::bail!(msg);
@@ -169,11 +187,11 @@ impl<'a> Resolver<'a> {
                     _ => {}
                 }
 
-                if let Some(expr) = expr {
+                if let Some(expr) = value {
                     self.resolve_expr(expr)?;
                 }
             }
-            Stmt::While(condition, body) => {
+            Stmt::While(While { condition, body }) => {
                 self.resolve_expr(condition)?;
                 self.resolve_stmt(body)?;
             }

@@ -3,7 +3,7 @@ use crate::{
     Literal, compile_time_error,
     expr::{Assign, Binary, Call, Expr, Grouping, Super, Unary},
     lexer::Lexer,
-    stmt::Stmt,
+    stmt::{Class, Function, If, Return, Stmt, Var, While},
     tokens::{Token, TokenType, TokenType::*},
 };
 use std::fmt::{Display, Formatter};
@@ -106,7 +106,11 @@ impl<'source> Parser<'source> {
         }
         self.consume(RightBrace, "Expect '}' after class body.")?;
 
-        Ok(Stmt::Class(name, methods, superclass))
+        Ok(Stmt::Class(Class {
+            name,
+            methods,
+            superclass,
+        }))
     }
 
     fn fun_decl(&mut self, kind: FunctionKind) -> anyhow::Result<Stmt> {
@@ -142,7 +146,11 @@ impl<'source> Parser<'source> {
             anyhow::bail!(msg.to_string());
         };
 
-        Ok(Stmt::Function(name, params, stmts))
+        Ok(Stmt::Function(Function {
+            name,
+            params,
+            body: stmts,
+        }))
     }
 
     fn var_decl(&mut self) -> anyhow::Result<Stmt> {
@@ -156,7 +164,7 @@ impl<'source> Parser<'source> {
 
         self.consume(Semicolon, "Expect ';' after variable declaration.")?;
 
-        Ok(Stmt::Var(name, initializer))
+        Ok(Stmt::Var(Var { name, initializer }))
     }
 
     fn stmt(&mut self) -> anyhow::Result<Stmt> {
@@ -189,7 +197,11 @@ impl<'source> Parser<'source> {
             None
         };
 
-        Ok(Stmt::If(condition, then_branch, else_branch))
+        Ok(Stmt::If(If {
+            condition,
+            then_branch,
+            else_branch,
+        }))
     }
 
     fn while_stmt(&mut self) -> anyhow::Result<Stmt> {
@@ -198,7 +210,10 @@ impl<'source> Parser<'source> {
         self.consume(RightParen, "Expect ')' after condition.")?;
         let body = self.stmt()?;
 
-        Ok(Stmt::While(condition, Box::new(body)))
+        Ok(Stmt::While(While {
+            condition,
+            body: Box::new(body),
+        }))
     }
 
     fn for_stmt(&mut self) -> anyhow::Result<Stmt> {
@@ -233,10 +248,10 @@ impl<'source> Parser<'source> {
             body = Stmt::Block(vec![body, Stmt::Expression(increment)]);
         }
 
-        body = Stmt::While(
-            condition.unwrap_or(Expr::Literal(Literal::Bool(true))),
-            Box::new(body),
-        );
+        body = Stmt::While(While {
+            condition: condition.unwrap_or(Expr::Literal(Literal::Bool(true))),
+            body: Box::new(body),
+        });
 
         if let Some(initializer) = initializer {
             body = Stmt::Block(vec![initializer, body]);
@@ -507,7 +522,7 @@ impl<'source> Parser<'source> {
 
         self.consume(Semicolon, "Expect ; after return value.")?;
 
-        Ok(Stmt::Return(keyword, value))
+        Ok(Stmt::Return(Return { keyword, value }))
     }
 
     fn primary(&mut self) -> anyhow::Result<Expr> {

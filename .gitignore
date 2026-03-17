@@ -2,3 +2,4 @@
 /target
 /tests/craftinginterpreters/tool/.dart_tool
 .DS_store
+.claude/settings.local.json

@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::rc::Rc;
 
 mod native_functions;
-use crate::interpreter::class::Instance;
+use crate::interpreter::class::LoxInstance;
 use crate::runtime_error;
 use crate::tokens::{Token, TokenType};
 pub(super) use native_functions::Clock;
@@ -93,7 +93,7 @@ impl LoxCallable for LoxFunction {
 }
 
 impl LoxFunction {
-    pub(crate) fn bind(&self, instance: Rc<RefCell<Instance>>) -> LoxFunction {
+    pub(crate) fn bind(&self, instance: Rc<RefCell<LoxInstance>>) -> LoxFunction {
         let env = Rc::new(RefCell::new(Environment::new_with_enclosing(Some(
             self.closure.clone(),
         ))));
