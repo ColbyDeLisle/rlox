@@ -26,7 +26,7 @@ pub trait LoxCallable: Debug {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct LoxFunction {
+pub struct LoxFunction {
     pub(super) name: String,
     pub(super) params: Vec<String>,
     pub(super) body: Vec<Stmt>,

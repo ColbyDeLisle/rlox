@@ -1,18 +1,18 @@
 use super::functions::{LoxCallable, LoxFunction};
 use crate::interpreter::Interpreter;
 use crate::interpreter::value::Value;
+use crate::runtime_error;
 use crate::tokens::Token;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use crate::runtime_error;
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
 
 #[derive(Debug, Clone)]
-pub(super) struct Class {
+pub struct Class {
     pub(super) class_name: String,
     pub(super) methods: HashMap<String, LoxFunction>,
     pub(super) superclass: Option<Rc<Self>>,
@@ -86,7 +86,7 @@ impl LoxCallable for Rc<Class> {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct Instance {
+pub struct Instance {
     pub(super) class: Rc<Class>,
     pub(super) fields: HashMap<String, Value>,
     id: usize,
