@@ -333,7 +333,7 @@ impl Interpreter {
                 anyhow::bail!(msg.to_string())
             }
             (TokenType::Bang, value) => Ok(Value::Bool(!self.is_truthy(&value))),
-            _ => panic!(),
+            _ => unreachable!("unary operator must be Bang or Minus"),
         }
     }
 
@@ -433,7 +433,7 @@ impl Interpreter {
                 self.had_runtime_error = true;
                 anyhow::bail!(msg.to_string())
             }
-            _ => panic!(),
+            _ => unreachable!("binary operator token type not handled"),
         };
 
         Ok(value)
@@ -519,6 +519,7 @@ impl Interpreter {
     }
 
     fn supr(&mut self, supr: Super) -> anyhow::Result<Value> {
+        // The resolver guarantees that every `super` expression is resolved.
         let distance = self.locals.get(&supr.keyword).unwrap();
 
         let superclass =

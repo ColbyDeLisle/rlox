@@ -12,7 +12,6 @@ use std::iter::Peekable;
 #[derive(Debug)]
 enum FunctionKind {
     Function,
-    #[allow(dead_code)]
     Method,
 }
 
@@ -263,7 +262,7 @@ impl<'source> Parser<'source> {
     fn block(&mut self) -> anyhow::Result<Stmt> {
         let mut statements: Vec<Stmt> = vec![];
 
-        while !self.check(&RightBrace) & self.tokens.peek().is_some() {
+        while !self.check(&RightBrace) && self.tokens.peek().is_some() {
             if let Some(stmt) = self.decl() {
                 statements.push(stmt);
             }
