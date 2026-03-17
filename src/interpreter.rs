@@ -56,11 +56,10 @@ impl Interpreter {
     }
 
     pub fn interpret(&mut self, stmts: Vec<Stmt>) -> InterpretResult {
-        let mut resolver = Resolver::new(std::mem::take(self));
+        let mut resolver = Resolver::new(self);
         if resolver.resolve(&stmts).is_err() {
-            return InterpretResult::Err(Signal::ResolveError);
+            return Err(Signal::ResolveError);
         }
-        *self = std::mem::take(&mut resolver.interpreter);
 
         for stmt in stmts {
             self.stmt(stmt)?;

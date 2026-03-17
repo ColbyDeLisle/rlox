@@ -113,9 +113,10 @@ impl Instance {
         }
 
         if let Some(superclass) = self_.class.superclass.clone()
-            && let Some(method) = superclass.find_method(&name.lexeme) {
-                return Some(Value::Callable(Rc::new(method.bind(instance.clone()))));
-            }
+            && let Some(method) = superclass.find_method(&name.lexeme)
+        {
+            return Some(Value::Callable(Rc::new(method.bind(instance.clone()))));
+        }
 
         None
     }

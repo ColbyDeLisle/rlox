@@ -26,9 +26,9 @@ enum ClassType {
 }
 
 /// The Lox resolver.
-pub(crate) struct Resolver {
+pub(crate) struct Resolver<'a> {
     /// The Lox interpreter for which symbols are being resolved.
-    pub(crate) interpreter: Interpreter,
+    pub(crate) interpreter: &'a mut Interpreter,
     /// A stack of scopes used during resolution.
     scopes: Vec<Scope>,
     /// Whether the current scope is in the body of a callable.
@@ -37,9 +37,9 @@ pub(crate) struct Resolver {
     current_class_type: ClassType,
 }
 
-impl Resolver {
+impl<'a> Resolver<'a> {
     /// Create a new `Resolver`, provided the `Interpreter` it will resolve for.
-    pub(crate) fn new(interpreter: Interpreter) -> Self {
+    pub(crate) fn new(interpreter: &'a mut Interpreter) -> Self {
         Self {
             interpreter,
             scopes: Vec::new(),
@@ -213,11 +213,12 @@ impl Resolver {
         match expr {
             Expr::Variable(token) => {
                 if let Some(scope) = self.scopes.last_mut()
-                    && scope.get(&token.lexeme) == Some(&SymbolState::Pending) {
-                        let msg = "Can't read local variable in its own initializer.";
-                        compile_time_error(Some(token), msg);
-                        anyhow::bail!(msg);
-                    }
+                    && scope.get(&token.lexeme) == Some(&SymbolState::Pending)
+                {
+                    let msg = "Can't read local variable in its own initializer.";
+                    compile_time_error(Some(token), msg);
+                    anyhow::bail!(msg);
+                }
 
                 self.resolve_local(token);
             }

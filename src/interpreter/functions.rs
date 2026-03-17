@@ -64,8 +64,7 @@ impl LoxCallable for LoxFunction {
         ))));
 
         for (i, name) in self.params.iter().enumerate() {
-            env.borrow_mut()
-                .define(name.clone(), Some(args[i].clone()));
+            env.borrow_mut().define(name.clone(), Some(args[i].clone()));
         }
 
         let body_result = interpreter.execute_block_with_env(self.body.clone(), env);
