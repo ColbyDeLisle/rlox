@@ -55,8 +55,9 @@ fn run_repl() {
         io::stdout().flush().unwrap();
 
         line.clear();
-        if stdin.read_line(&mut line).unwrap() == 0 {
-            break; // EOF (Ctrl+D)
+        match stdin.read_line(&mut line) {
+            Ok(0) | Err(_) => break, // EOF (Ctrl+D on Unix, Ctrl+Z on Windows)
+            Ok(_) => {}
         }
 
         if let Err(err) = run(line.as_str(), &mut interpreter) {
