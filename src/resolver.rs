@@ -132,7 +132,7 @@ impl Resolver {
             Stmt::Var(token, expr) => {
                 self.declare(token)?;
                 if let Some(initializer) = expr {
-                    self.resolve_expr(&initializer)?;
+                    self.resolve_expr(initializer)?;
                 }
                 self.define(token.lexeme.clone())
             }
@@ -140,17 +140,17 @@ impl Resolver {
                 self.resolve_function(token, params, body, FunctionType::Function)?;
             }
             Stmt::Expression(expr) => {
-                self.resolve_expr(&expr)?;
+                self.resolve_expr(expr)?;
             }
             Stmt::If(condition, if_body, else_body) => {
-                self.resolve_expr(&condition)?;
+                self.resolve_expr(condition)?;
                 self.resolve_stmt(if_body)?;
                 if let Some(stmt) = else_body {
                     self.resolve_stmt(stmt)?;
                 }
             }
             Stmt::Print(expr) => {
-                self.resolve_expr(&expr)?;
+                self.resolve_expr(expr)?;
             }
             Stmt::Return(keyword, expr) => {
                 match self.current_function_type {
@@ -170,11 +170,11 @@ impl Resolver {
                 }
 
                 if let Some(expr) = expr {
-                    self.resolve_expr(&expr)?;
+                    self.resolve_expr(expr)?;
                 }
             }
             Stmt::While(condition, body) => {
-                self.resolve_expr(&condition)?;
+                self.resolve_expr(condition)?;
                 self.resolve_stmt(body)?;
             }
         }
@@ -192,7 +192,7 @@ impl Resolver {
 
     fn declare(&mut self, name: &Token) -> anyhow::Result<()> {
         if let Some(scope) = self.scopes.last_mut() {
-            if let Some(_) = scope.get(&name.lexeme) {
+            if scope.get(&name.lexeme).is_some() {
                 let msg = "Already a variable with this name in this scope.";
                 compile_time_error(Some(name), msg);
                 anyhow::bail!(msg);
@@ -212,13 +212,12 @@ impl Resolver {
     fn resolve_expr(&mut self, expr: &Expr) -> anyhow::Result<()> {
         match expr {
             Expr::Variable(token) => {
-                if let Some(scope) = self.scopes.last_mut() {
-                    if scope.get(&token.lexeme) == Some(&SymbolState::Pending) {
+                if let Some(scope) = self.scopes.last_mut()
+                    && scope.get(&token.lexeme) == Some(&SymbolState::Pending) {
                         let msg = "Can't read local variable in its own initializer.";
-                        compile_time_error(Some(&token), msg);
+                        compile_time_error(Some(token), msg);
                         anyhow::bail!(msg);
                     }
-                }
 
                 self.resolve_local(token);
             }
@@ -269,7 +268,7 @@ impl Resolver {
             Expr::This(token) => {
                 if self.current_class_type == ClassType::None {
                     let msg = "Can't use 'this' outside of a class.";
-                    compile_time_error(Some(&token), msg);
+                    compile_time_error(Some(token), msg);
                     anyhow::bail!(msg);
                 }
 
