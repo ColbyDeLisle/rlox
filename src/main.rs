@@ -36,8 +36,9 @@ fn run_file(path: &str) {
         eprintln!("Could not read file: {err}");
         process::exit(74);
     });
+    let mut interpreter = Interpreter::new();
 
-    match run(source.as_str()) {
+    match run(source.as_str(), &mut interpreter) {
         Ok(_) => {}
         Err(ErrorKind::Compile) => process::exit(65),
         Err(ErrorKind::Runtime) => process::exit(70),
@@ -47,17 +48,19 @@ fn run_file(path: &str) {
 fn run_repl() {
     let stdin = io::stdin();
     let mut line = String::new();
+    let mut interpreter = Interpreter::new();
 
     loop {
         print!("> ");
         io::stdout().flush().unwrap();
 
         line.clear();
-        if stdin.read_line(&mut line).unwrap() == 0 {
-            break; // EOF (Ctrl+D)
+        match stdin.read_line(&mut line) {
+            Ok(0) | Err(_) => break, // EOF (Ctrl+D on Unix, Ctrl+Z on Windows)
+            Ok(_) => {}
         }
 
-        if let Err(err) = run(line.as_str()) {
+        if let Err(err) = run(line.as_str(), &mut interpreter) {
             match err {
                 ErrorKind::Compile => eprintln!("Compile error."),
                 ErrorKind::Runtime => eprintln!("Runtime error."),
@@ -66,7 +69,7 @@ fn run_repl() {
     }
 }
 
-fn run(source: &str) -> Result<(), ErrorKind> {
+fn run(source: &str, interpreter: &mut Interpreter) -> Result<(), ErrorKind> {
     let lexer = Lexer::new(source);
     let mut parser = Parser::new(lexer);
 
@@ -74,7 +77,7 @@ fn run(source: &str) -> Result<(), ErrorKind> {
         return Err(ErrorKind::Compile);
     };
 
-    match Interpreter::new().interpret(stmts) {
+    match interpreter.interpret(stmts) {
         Ok(_) => Ok(()),
         Err(Signal::ResolveError) => Err(ErrorKind::Compile),
         Err(_) => Err(ErrorKind::Runtime),

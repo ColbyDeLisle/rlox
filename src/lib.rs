@@ -1,6 +1,6 @@
+use crate::tokens::TokenType;
 use std::fmt::{Display, Formatter};
 use tokens::Token;
-use crate::tokens::TokenType;
 
 pub mod expr;
 pub mod interpreter;

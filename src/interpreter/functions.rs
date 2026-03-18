@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::rc::Rc;
 
 mod native_functions;
-use crate::interpreter::class::Instance;
+use crate::interpreter::class::LoxInstance;
 use crate::runtime_error;
 use crate::tokens::{Token, TokenType};
 pub(super) use native_functions::Clock;
@@ -26,7 +26,7 @@ pub trait LoxCallable: Debug {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct LoxFunction {
+pub struct LoxFunction {
     pub(super) name: String,
     pub(super) params: Vec<String>,
     pub(super) body: Vec<Stmt>,
@@ -63,12 +63,11 @@ impl LoxCallable for LoxFunction {
             self.closure.clone(),
         ))));
 
-        for i in 0..self.params.len() {
-            env.borrow_mut()
-                .define(self.params[i].clone(), Some(args[i].clone()));
+        for (i, name) in self.params.iter().enumerate() {
+            env.borrow_mut().define(name.clone(), Some(args[i].clone()));
         }
 
-        let body_result = interpreter.execute_block_with_env(self.body.clone(), env);
+        let body_result = interpreter.execute_block_with_env(&self.body, env);
         match body_result {
             // n.b. we return Nil from a successful function call w/o an explicit `return`
             Ok(_) => {
@@ -94,7 +93,7 @@ impl LoxCallable for LoxFunction {
 }
 
 impl LoxFunction {
-    pub(crate) fn bind(&self, instance: Rc<RefCell<Instance>>) -> LoxFunction {
+    pub(crate) fn bind(&self, instance: Rc<RefCell<LoxInstance>>) -> LoxFunction {
         let env = Rc::new(RefCell::new(Environment::new_with_enclosing(Some(
             self.closure.clone(),
         ))));
@@ -102,11 +101,8 @@ impl LoxFunction {
             .define("this".to_string(), Some(Value::Instance(instance)));
 
         LoxFunction {
-            name: self.name.clone(),
-            params: self.params.clone(),
-            body: self.body.clone(),
             closure: env,
-            is_initializer: self.is_initializer,
+            ..self.clone()
         }
     }
 }

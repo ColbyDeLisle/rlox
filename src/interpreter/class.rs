@@ -1,24 +1,24 @@
 use super::functions::{LoxCallable, LoxFunction};
 use crate::interpreter::Interpreter;
 use crate::interpreter::value::Value;
+use crate::runtime_error;
 use crate::tokens::Token;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use crate::runtime_error;
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
 
 #[derive(Debug, Clone)]
-pub(super) struct Class {
+pub struct LoxClass {
     pub(super) class_name: String,
     pub(super) methods: HashMap<String, LoxFunction>,
     pub(super) superclass: Option<Rc<Self>>,
 }
 
-impl Class {
+impl LoxClass {
     pub(super) fn find_method(&self, name: &str) -> Option<LoxFunction> {
         if let Some(method) = self.methods.get(name) {
             return Some(method.clone());
@@ -30,21 +30,21 @@ impl Class {
     }
 }
 
-impl Display for Class {
+impl Display for LoxClass {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.class_name)
     }
 }
 
-impl PartialEq for Class {
+impl PartialEq for LoxClass {
     fn eq(&self, other: &Self) -> bool {
         self.class_name == other.class_name
     }
 }
 
-impl Eq for Class {}
+impl Eq for LoxClass {}
 
-impl LoxCallable for Rc<Class> {
+impl LoxCallable for Rc<LoxClass> {
     fn name(&self) -> String {
         self.class_name.clone()
     }
@@ -63,7 +63,7 @@ impl LoxCallable for Rc<Class> {
         args: &[Value],
         paren_token: &Token,
     ) -> anyhow::Result<Value> {
-        let instance = Rc::new(RefCell::new(Instance::new(self.clone())));
+        let instance = Rc::new(RefCell::new(LoxInstance::new(self.clone())));
 
         if let Some(initializer) = self.find_method("init") {
             let init = LoxFunction::bind(&initializer, instance.clone());
@@ -86,14 +86,14 @@ impl LoxCallable for Rc<Class> {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct Instance {
-    pub(super) class: Rc<Class>,
+pub struct LoxInstance {
+    pub(super) class: Rc<LoxClass>,
     pub(super) fields: HashMap<String, Value>,
     id: usize,
 }
 
-impl Instance {
-    pub(super) fn new(class: Rc<Class>) -> Self {
+impl LoxInstance {
+    pub(super) fn new(class: Rc<LoxClass>) -> Self {
         Self {
             class,
             fields: HashMap::new(),
@@ -101,7 +101,7 @@ impl Instance {
         }
     }
 
-    pub(super) fn get(instance: Rc<RefCell<Instance>>, name: &Token) -> Option<Value> {
+    pub(super) fn get(instance: Rc<RefCell<LoxInstance>>, name: &Token) -> Option<Value> {
         let self_ = instance.borrow();
 
         if let Some(field) = self_.fields.get(&name.lexeme) {
@@ -112,10 +112,10 @@ impl Instance {
             return Some(Value::Callable(Rc::new(method.bind(instance.clone()))));
         }
 
-        if let Some(superclass) = self_.class.superclass.clone() {
-            if let Some(method) = superclass.find_method(&name.lexeme) {
-                return Some(Value::Callable(Rc::new(method.bind(instance.clone()))));
-            }
+        if let Some(superclass) = self_.class.superclass.clone()
+            && let Some(method) = superclass.find_method(&name.lexeme)
+        {
+            return Some(Value::Callable(Rc::new(method.bind(instance.clone()))));
         }
 
         None
@@ -126,16 +126,16 @@ impl Instance {
     }
 }
 
-impl Display for Instance {
+impl Display for LoxInstance {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} instance", self.class.class_name)
     }
 }
 
-impl PartialEq for Instance {
+impl PartialEq for LoxInstance {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl Eq for Instance {}
+impl Eq for LoxInstance {}

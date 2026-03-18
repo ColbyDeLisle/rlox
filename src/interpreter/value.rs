@@ -1,4 +1,4 @@
-use super::class::{Class, Instance};
+use super::class::{LoxClass, LoxInstance};
 use crate::interpreter::functions::{LoxCallable, LoxFunction};
 use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
@@ -18,9 +18,9 @@ pub enum Value {
     /// A native Lox function.
     NativeFunction(Rc<dyn LoxCallable>),
     /// A Lox class.
-    Class(Rc<Class>),
+    Class(Rc<LoxClass>),
     /// An instance of a Lox class.
-    Instance(Rc<RefCell<Instance>>),
+    Instance(Rc<RefCell<LoxInstance>>),
     /// The special Lox value, `Nil`.
     Nil,
 }

@@ -1,5 +1,10 @@
 use crate::tokens::Token;
-use crate::{compile_time_error, expr::Expr, interpreter::Interpreter, stmt::Stmt};
+use crate::{
+    compile_time_error,
+    expr::Expr,
+    interpreter::Interpreter,
+    stmt::{Class, Function, If, Return, Stmt, Var, While},
+};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,9 +31,9 @@ enum ClassType {
 }
 
 /// The Lox resolver.
-pub(crate) struct Resolver {
+pub(crate) struct Resolver<'a> {
     /// The Lox interpreter for which symbols are being resolved.
-    pub(crate) interpreter: Interpreter,
+    pub(crate) interpreter: &'a mut Interpreter,
     /// A stack of scopes used during resolution.
     scopes: Vec<Scope>,
     /// Whether the current scope is in the body of a callable.
@@ -37,9 +42,9 @@ pub(crate) struct Resolver {
     current_class_type: ClassType,
 }
 
-impl Resolver {
+impl<'a> Resolver<'a> {
     /// Create a new `Resolver`, provided the `Interpreter` it will resolve for.
-    pub(crate) fn new(interpreter: Interpreter) -> Self {
+    pub(crate) fn new(interpreter: &'a mut Interpreter) -> Self {
         Self {
             interpreter,
             scopes: Vec::new(),
@@ -72,7 +77,11 @@ impl Resolver {
                 self.resolve(stmts)?;
                 self.end_scope();
             }
-            Stmt::Class(name, methods, superclass) => {
+            Stmt::Class(Class {
+                name,
+                methods,
+                superclass,
+            }) => {
                 let enclosing_class_type = self.current_class_type;
                 self.current_class_type = ClassType::Class;
 
@@ -108,7 +117,12 @@ impl Resolver {
                     .insert("this".to_string(), SymbolState::Resolved);
 
                 for method in methods {
-                    let Stmt::Function(token, params, body) = method else {
+                    let Stmt::Function(Function {
+                        name: token,
+                        params,
+                        body,
+                    }) = method
+                    else {
                         unreachable!();
                     };
 
@@ -129,30 +143,34 @@ impl Resolver {
 
                 self.current_class_type = enclosing_class_type;
             }
-            Stmt::Var(token, expr) => {
-                self.declare(token)?;
-                if let Some(initializer) = expr {
-                    self.resolve_expr(&initializer)?;
+            Stmt::Var(Var { name, initializer }) => {
+                self.declare(name)?;
+                if let Some(expr) = initializer {
+                    self.resolve_expr(expr)?;
                 }
-                self.define(token.lexeme.clone())
+                self.define(name.lexeme.clone())
             }
-            Stmt::Function(token, params, body) => {
-                self.resolve_function(token, params, body, FunctionType::Function)?;
+            Stmt::Function(Function { name, params, body }) => {
+                self.resolve_function(name, params, body, FunctionType::Function)?;
             }
             Stmt::Expression(expr) => {
-                self.resolve_expr(&expr)?;
+                self.resolve_expr(expr)?;
             }
-            Stmt::If(condition, if_body, else_body) => {
-                self.resolve_expr(&condition)?;
-                self.resolve_stmt(if_body)?;
-                if let Some(stmt) = else_body {
+            Stmt::If(If {
+                condition,
+                then_branch,
+                else_branch,
+            }) => {
+                self.resolve_expr(condition)?;
+                self.resolve_stmt(then_branch)?;
+                if let Some(stmt) = else_branch {
                     self.resolve_stmt(stmt)?;
                 }
             }
             Stmt::Print(expr) => {
-                self.resolve_expr(&expr)?;
+                self.resolve_expr(expr)?;
             }
-            Stmt::Return(keyword, expr) => {
+            Stmt::Return(Return { keyword, value }) => {
                 match self.current_function_type {
                     FunctionType::None => {
                         let msg = "Can't return from top-level code.";
@@ -160,7 +178,7 @@ impl Resolver {
                         anyhow::bail!(msg);
                     }
                     FunctionType::Initializer => {
-                        if expr.is_some() {
+                        if value.is_some() {
                             let msg = "Can't return a value from an initializer.";
                             compile_time_error(Some(keyword), msg);
                             anyhow::bail!(msg);
@@ -169,12 +187,12 @@ impl Resolver {
                     _ => {}
                 }
 
-                if let Some(expr) = expr {
-                    self.resolve_expr(&expr)?;
+                if let Some(expr) = value {
+                    self.resolve_expr(expr)?;
                 }
             }
-            Stmt::While(condition, body) => {
-                self.resolve_expr(&condition)?;
+            Stmt::While(While { condition, body }) => {
+                self.resolve_expr(condition)?;
                 self.resolve_stmt(body)?;
             }
         }
@@ -192,7 +210,7 @@ impl Resolver {
 
     fn declare(&mut self, name: &Token) -> anyhow::Result<()> {
         if let Some(scope) = self.scopes.last_mut() {
-            if let Some(_) = scope.get(&name.lexeme) {
+            if scope.get(&name.lexeme).is_some() {
                 let msg = "Already a variable with this name in this scope.";
                 compile_time_error(Some(name), msg);
                 anyhow::bail!(msg);
@@ -212,12 +230,12 @@ impl Resolver {
     fn resolve_expr(&mut self, expr: &Expr) -> anyhow::Result<()> {
         match expr {
             Expr::Variable(token) => {
-                if let Some(scope) = self.scopes.last_mut() {
-                    if scope.get(&token.lexeme) == Some(&SymbolState::Pending) {
-                        let msg = "Can't read local variable in its own initializer.";
-                        compile_time_error(Some(&token), msg);
-                        anyhow::bail!(msg);
-                    }
+                if let Some(scope) = self.scopes.last_mut()
+                    && scope.get(&token.lexeme) == Some(&SymbolState::Pending)
+                {
+                    let msg = "Can't read local variable in its own initializer.";
+                    compile_time_error(Some(token), msg);
+                    anyhow::bail!(msg);
                 }
 
                 self.resolve_local(token);
@@ -269,7 +287,7 @@ impl Resolver {
             Expr::This(token) => {
                 if self.current_class_type == ClassType::None {
                     let msg = "Can't use 'this' outside of a class.";
-                    compile_time_error(Some(&token), msg);
+                    compile_time_error(Some(token), msg);
                     anyhow::bail!(msg);
                 }
 
