@@ -459,6 +459,7 @@ impl Interpreter {
         match callee {
             Value::Callable(f) => f.call(self, &args, &call.paren),
             Value::Class(f) => f.call(self, &args, &call.paren),
+            Value::NativeFunction(f) => f.call(self, &args, &call.paren),
             _ => {
                 let msg = "Can only call functions and classes.";
                 runtime_error(Some(&call.paren), msg);
