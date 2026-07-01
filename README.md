@@ -2,5 +2,4 @@
 
 A rust port of the `jlox` implementation from [Crafting Interpreters](https://craftinginterpreters.com/), with `clox` to come.
 
-This is a for-fun project to learn some more about compiling, and I intend to implement the bulk of the interpreters in the reference.
-I'll also try making the project minimally presentable -- it will have some tests, docs, etc. -- but my focus will be on getting things working so that I can use this as a jumping-off point later on.
+This is strictly a for-fun project to learn some more about (classical) compiling. The project is unit-tested -- I've set up a GitHub action to run the author's test suite -- but use at your own risk!
