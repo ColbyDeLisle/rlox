@@ -1,0 +1,53 @@
+// Literals, indexing, len
+var a = [1, 2, 3];
+print a;            // expect: [1, 2, 3]
+print a[0];         // expect: 1
+print a[2];         // expect: 3
+print len(a);       // expect: 3
+
+// Index assignment
+a[1] = 99;
+print a;            // expect: [1, 99, 3]
+
+// Growth with push / pop
+push(a, 4);
+print a;            // expect: [1, 99, 3, 4]
+print len(a);       // expect: 4
+print pop(a);       // expect: 4
+print a;            // expect: [1, 99, 3]
+
+// Empty array + build up
+var b = [];
+print len(b);       // expect: 0
+push(b, "hi");
+print b[0];         // expect: hi
+
+// Nested arrays and heterogeneous elements
+var m = [[1, 2], [3, 4]];
+print m[0][1];      // expect: 2
+m[1][0] = 30;
+print m;            // expect: [[1, 2], [30, 4]]
+
+// Reference semantics: c and a alias the same array
+var c = a;
+push(c, 7);
+print a;            // expect: [1, 99, 3, 7]
+print a == c;       // expect: true
+print a == [1, 99, 3, 7]; // expect: false  (distinct arrays)
+
+// Expressions as indices
+var i = 1;
+print a[i + 1];     // expect: 3
+
+// Slicing (end-exclusive, returns a copy)
+var s = [10, 20, 30, 40, 50];
+print slice(s, 1, 3);        // expect: [20, 30]
+print slice(s, 0, len(s));   // expect: [10, 20, 30, 40, 50]
+print slice(s, 2, 2);        // expect: []
+
+// Slices copy: mutating the slice leaves the source untouched
+var sub = slice(s, 1, 3);
+push(sub, 99);
+sub[0] = -1;
+print sub;                   // expect: [-1, 30, 99]
+print s;                     // expect: [10, 20, 30, 40, 50]

@@ -21,6 +21,8 @@ pub enum Value {
     Class(Rc<LoxClass>),
     /// An instance of a Lox class.
     Instance(Rc<RefCell<LoxInstance>>),
+    /// A Lox array. Dynamically sized, with reference semantics.
+    Array(Rc<RefCell<Vec<Value>>>),
     /// The special Lox value, `Nil`.
     Nil,
 }
@@ -34,6 +36,7 @@ impl PartialEq for Value {
             (Value::Nil, Value::Nil) => true,
             (Value::Callable(f), Value::Callable(g)) => f == g,
             (Value::Class(c), Value::Class(d)) => c.class_name == d.class_name,
+            (Value::Array(a), Value::Array(b)) => Rc::ptr_eq(a, b),
             _ => false,
         }
     }
@@ -61,6 +64,15 @@ impl Display for Value {
             }
             Value::Instance(i) => {
                 write!(f, "{}", i.borrow())
+            }
+            Value::Array(a) => {
+                let elements = a
+                    .borrow()
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "[{elements}]")
             }
         }
     }

@@ -257,6 +257,20 @@ impl<'a> Resolver<'a> {
             Expr::Get(get) => {
                 self.resolve_expr(get.expr.as_ref())?;
             }
+            Expr::Array(elements) => {
+                for element in elements {
+                    self.resolve_expr(element)?;
+                }
+            }
+            Expr::Index(index) => {
+                self.resolve_expr(index.object.as_ref())?;
+                self.resolve_expr(index.index.as_ref())?;
+            }
+            Expr::IndexSet(index_set) => {
+                self.resolve_expr(index_set.object.as_ref())?;
+                self.resolve_expr(index_set.index.as_ref())?;
+                self.resolve_expr(index_set.value.as_ref())?;
+            }
             Expr::Grouping(grouping) => {
                 self.resolve_expr(grouping.expression.as_ref())?;
             }

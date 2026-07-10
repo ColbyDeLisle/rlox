@@ -19,6 +19,10 @@ pub enum TokenType {
     LeftBrace,
     #[token("}")]
     RightBrace,
+    #[token("[")]
+    LeftBracket,
+    #[token("]")]
+    RightBracket,
     #[token(",")]
     Comma,
     #[token(".")]

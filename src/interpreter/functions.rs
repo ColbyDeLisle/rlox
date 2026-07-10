@@ -8,7 +8,7 @@ mod native_functions;
 use crate::interpreter::class::LoxInstance;
 use crate::runtime_error;
 use crate::tokens::{Token, TokenType};
-pub(super) use native_functions::Clock;
+pub(super) use native_functions::{Clock, Len, Pop, Push, Slice};
 
 /// A trait representing a callable in Lox.
 pub trait LoxCallable: Debug {

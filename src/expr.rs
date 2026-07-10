@@ -4,11 +4,14 @@ use crate::tokens::Token;
 /// A Lox expression.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
+    Array(Vec<Expr>),
     Assign(Assign),
     Binary(Binary),
     Call(Call),
     Get(Get),
     Grouping(Grouping),
+    Index(Index),
+    IndexSet(IndexSet),
     Literal(Literal),
     Logical(Logical),
     Set(Set),
@@ -73,4 +76,21 @@ pub struct Set {
 pub struct Super {
     pub keyword: Token,
     pub method: Token,
+}
+
+/// An index read, e.g. `a[i]`. The `bracket` token is retained for error reporting.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Index {
+    pub object: Box<Expr>,
+    pub bracket: Token,
+    pub index: Box<Expr>,
+}
+
+/// An index assignment, e.g. `a[i] = value`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexSet {
+    pub object: Box<Expr>,
+    pub bracket: Token,
+    pub index: Box<Expr>,
+    pub value: Box<Expr>,
 }

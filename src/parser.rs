@@ -1,4 +1,4 @@
-use crate::expr::{Get, Logical, Set};
+use crate::expr::{Get, Index, IndexSet, Logical, Set};
 use crate::{
     Literal, compile_time_error,
     expr::{Assign, Binary, Call, Expr, Grouping, Super, Unary},
@@ -346,6 +346,14 @@ impl<'source> Parser<'source> {
                         value: Box::new(self.assignment()?),
                     }));
                 }
+                Expr::Index(index) => {
+                    return Ok(Expr::IndexSet(IndexSet {
+                        object: index.object,
+                        bracket: index.bracket,
+                        index: index.index,
+                        value: Box::new(self.assignment()?),
+                    }));
+                }
                 _ => {
                     let msg = "Invalid assignment target.";
                     self.error(msg, None);
@@ -479,6 +487,15 @@ impl<'source> Parser<'source> {
                     expr: Box::new(expr),
                     name,
                 })
+            } else if self.matches(&[LeftBracket]) {
+                let bracket = self.previous.clone();
+                let index = self.expr()?;
+                self.consume(RightBracket, "Expect ']' after index.")?;
+                expr = Expr::Index(Index {
+                    object: Box::new(expr),
+                    bracket,
+                    index: Box::new(index),
+                });
             } else {
                 break;
             }
@@ -557,6 +574,17 @@ impl<'source> Parser<'source> {
                 return Ok(Expr::Grouping(Grouping {
                     expression: Box::new(expr),
                 }));
+            }
+            LeftBracket => {
+                let mut elements: Vec<Expr> = vec![];
+                if !self.check(&RightBracket) {
+                    elements.push(self.expr()?);
+                    while self.matches(&[Comma]) {
+                        elements.push(self.expr()?);
+                    }
+                }
+                self.consume(RightBracket, "Expect ']' after array elements.")?;
+                return Ok(Expr::Array(elements));
             }
             UnterminatedString => {
                 let msg = "Unterminated string.";

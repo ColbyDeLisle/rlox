@@ -13,13 +13,13 @@ pub(crate) mod environment;
 use environment::Environment;
 
 mod functions;
-use functions::{Clock, LoxCallable, LoxFunction};
+use functions::{Clock, Len, LoxCallable, LoxFunction, Pop, Push, Slice};
 
 mod value;
 use value::Value;
 
 mod class;
-use crate::expr::{Get, Set, Super};
+use crate::expr::{Get, Index, IndexSet, Set, Super};
 use class::{LoxClass, LoxInstance};
 
 #[derive(Debug)]
@@ -45,6 +45,22 @@ impl Interpreter {
         env.borrow_mut().define(
             String::from("clock"),
             Some(Value::NativeFunction(Rc::new(Clock {}))),
+        );
+        env.borrow_mut().define(
+            String::from("len"),
+            Some(Value::NativeFunction(Rc::new(Len {}))),
+        );
+        env.borrow_mut().define(
+            String::from("push"),
+            Some(Value::NativeFunction(Rc::new(Push {}))),
+        );
+        env.borrow_mut().define(
+            String::from("pop"),
+            Some(Value::NativeFunction(Rc::new(Pop {}))),
+        );
+        env.borrow_mut().define(
+            String::from("slice"),
+            Some(Value::NativeFunction(Rc::new(Slice {}))),
         );
 
         Interpreter {
@@ -256,10 +272,13 @@ impl Interpreter {
 
     fn expr(&mut self, expr: &Expr) -> anyhow::Result<Value> {
         match expr {
+            Expr::Array(elements) => self.array(elements),
             Expr::Assign(assign) => self.assign(assign),
             Expr::Binary(binary) => self.binary(binary),
             Expr::Call(call) => self.call(call),
             Expr::Get(get) => self.get(get),
+            Expr::Index(index) => self.index(index),
+            Expr::IndexSet(index_set) => self.index_set(index_set),
             Expr::Grouping(grouping) => self.expr(&grouping.expression),
             Expr::Literal(literal) => self.literal(literal),
             Expr::Logical(logical) => self.logical(logical),
@@ -395,6 +414,9 @@ impl Interpreter {
             (TokenType::BangEqual, Value::Callable(f), Value::Callable(g)) => Value::Bool(f != g),
             (TokenType::BangEqual, Value::Class(x), Value::Class(y)) => Value::Bool(x != y),
             (TokenType::BangEqual, Value::Instance(x), Value::Instance(y)) => Value::Bool(x != y),
+            (TokenType::BangEqual, Value::Array(x), Value::Array(y)) => {
+                Value::Bool(!Rc::ptr_eq(x, y))
+            }
             (TokenType::BangEqual, _, _) => Value::Bool(true),
             (TokenType::EqualEqual, Value::Number(left), Value::Number(right)) => {
                 Value::Bool(*left == *right)
@@ -409,6 +431,9 @@ impl Interpreter {
             (TokenType::EqualEqual, Value::Callable(f), Value::Callable(g)) => Value::Bool(f == g),
             (TokenType::EqualEqual, Value::Class(x), Value::Class(y)) => Value::Bool(x == y),
             (TokenType::EqualEqual, Value::Instance(x), Value::Instance(y)) => Value::Bool(x == y),
+            (TokenType::EqualEqual, Value::Array(x), Value::Array(y)) => {
+                Value::Bool(Rc::ptr_eq(x, y))
+            }
             (TokenType::EqualEqual, _, _) => Value::Bool(false),
             (
                 TokenType::Minus
@@ -510,6 +535,84 @@ impl Interpreter {
                 anyhow::bail!(msg.to_string());
             }
         }
+    }
+
+    fn array(&mut self, elements: &[Expr]) -> anyhow::Result<Value> {
+        let mut values = Vec::with_capacity(elements.len());
+        for element in elements {
+            values.push(self.expr(element)?);
+        }
+        Ok(Value::Array(Rc::new(RefCell::new(values))))
+    }
+
+    fn index(&mut self, index: &Index) -> anyhow::Result<Value> {
+        let object = self.expr(&index.object)?;
+        let idx = self.expr(&index.index)?;
+
+        match object {
+            Value::Array(arr) => {
+                let len = arr.borrow().len();
+                let i = self.array_index(&idx, len, &index.bracket)?;
+                Ok(arr.borrow()[i].clone())
+            }
+            _ => {
+                let msg = "Can only index into arrays.";
+                runtime_error(Some(&index.bracket), msg);
+                self.had_runtime_error = true;
+                anyhow::bail!(msg.to_string());
+            }
+        }
+    }
+
+    fn index_set(&mut self, index_set: &IndexSet) -> anyhow::Result<Value> {
+        let object = self.expr(&index_set.object)?;
+        let idx = self.expr(&index_set.index)?;
+        let value = self.expr(&index_set.value)?;
+
+        match object {
+            Value::Array(arr) => {
+                let len = arr.borrow().len();
+                let i = self.array_index(&idx, len, &index_set.bracket)?;
+                arr.borrow_mut()[i] = value.clone();
+                Ok(value)
+            }
+            _ => {
+                let msg = "Can only index into arrays.";
+                runtime_error(Some(&index_set.bracket), msg);
+                self.had_runtime_error = true;
+                anyhow::bail!(msg.to_string());
+            }
+        }
+    }
+
+    /// Validate a Lox value used as an array index against `len`, returning the `usize` index.
+    fn array_index(&mut self, idx: &Value, len: usize, bracket: &Token) -> anyhow::Result<usize> {
+        let n = match idx {
+            Value::Number(n) => *n,
+            _ => {
+                let msg = "Array index must be a number.";
+                runtime_error(Some(bracket), msg);
+                self.had_runtime_error = true;
+                anyhow::bail!(msg.to_string());
+            }
+        };
+
+        if n < 0.0 || n.fract() != 0.0 {
+            let msg = "Array index must be a non-negative integer.";
+            runtime_error(Some(bracket), msg);
+            self.had_runtime_error = true;
+            anyhow::bail!(msg.to_string());
+        }
+
+        let i = n as usize;
+        if i >= len {
+            let msg = "Array index out of bounds.";
+            runtime_error(Some(bracket), msg);
+            self.had_runtime_error = true;
+            anyhow::bail!(msg.to_string());
+        }
+
+        Ok(i)
     }
 
     fn this(&mut self, this: &Token) -> anyhow::Result<Value> {
